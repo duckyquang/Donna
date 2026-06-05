@@ -6,17 +6,21 @@ import {
   type Node,
   type Edge,
   type NodeMouseHandler,
+  type NodeTypes,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { RefreshCw, X } from "lucide-react";
+import { KgCircleNode } from "../components/mindmap/KgCircleNode";
 import { api, type KgGraph, type KgNode } from "../lib/api";
+import { connectionCount, forceLayout } from "../lib/mindmap/forceLayout";
 import { Spinner } from "../components/ui";
 
-// Distinct, theme-friendly colors per knowledge cluster.
+const nodeTypes: NodeTypes = { kgCircle: KgCircleNode };
+
 const GROUP_COLORS: Record<string, string> = {
   People: "#e8a55a",
   Projects: "#5b9bd5",
-  Preferences: "#a78bfa",
+  Preferences: "#c9742a",
   Routines: "#4ade80",
   Places: "#f472b6",
   Health: "#f87171",
@@ -25,84 +29,45 @@ const GROUP_COLORS: Record<string, string> = {
 
 function colorFor(group: string): string {
   if (GROUP_COLORS[group]) return GROUP_COLORS[group];
-  // Stable fallback hue from the group name.
   let hash = 0;
   for (let i = 0; i < group.length; i++) hash = group.charCodeAt(i) + ((hash << 5) - hash);
-  return `hsl(${Math.abs(hash) % 360} 60% 60%)`;
+  return `hsl(${Math.abs(hash) % 360} 55% 55%)`;
 }
 
-/**
- * Build a clustered layout: group nodes into chunks, arrange clusters around a circle,
- * and lay each cluster's nodes in a ring around a group label. Deterministic so the map
- * is stable across refreshes.
- */
-function buildLayout(graph: KgGraph): { nodes: Node[]; edges: Edge[] } {
-  const byGroup = new Map<string, KgNode[]>();
-  for (const n of graph.nodes) {
-    const g = n.group || "Topics";
-    if (!byGroup.has(g)) byGroup.set(g, []);
-    byGroup.get(g)!.push(n);
-  }
+function nodeSize(id: string, edges: KgGraph["edges"]): number {
+  const links = connectionCount(id, edges);
+  return 10 + Math.min(links, 10) * 1.8;
+}
 
-  const groups = [...byGroup.keys()].sort();
-  const nodes: Node[] = [];
-  const clusterRadius = 420;
+function buildGraphLayout(graph: KgGraph): { nodes: Node[]; edges: Edge[] } {
+  const positions = forceLayout(graph.nodes, graph.edges);
+  const ids = new Set(graph.nodes.map((n) => n.id));
 
-  groups.forEach((group, gi) => {
-    const color = colorFor(group);
-    const groupAngle = (2 * Math.PI * gi) / Math.max(groups.length, 1);
-    const cx = Math.cos(groupAngle) * clusterRadius;
-    const cy = Math.sin(groupAngle) * clusterRadius;
-    const members = byGroup.get(group)!;
-    const ring = Math.max(110, members.length * 26);
-
-    // Cluster label at the center of the chunk.
-    nodes.push({
-      id: `group:${group}`,
-      position: { x: cx, y: cy },
-      data: { label: `${group} · ${members.length}` },
-      selectable: false,
-      draggable: false,
-      style: {
-        background: "transparent",
-        border: "none",
-        color,
-        fontWeight: 700,
-        fontSize: 14,
-        width: 160,
-        textAlign: "center" as const,
-        boxShadow: "none",
+  const nodes: Node[] = graph.nodes.map((m) => {
+    const size = nodeSize(m.id, graph.edges);
+    const pos = positions.get(m.id) ?? { x: 0, y: 0 };
+    return {
+      id: m.id,
+      type: "kgCircle",
+      position: { x: pos.x - size / 2, y: pos.y - size / 2 },
+      data: {
+        label: m.label,
+        color: colorFor(m.group || "Topics"),
+        size,
       },
-    });
-
-    members.forEach((m, mi) => {
-      const a = (2 * Math.PI * mi) / Math.max(members.length, 1);
-      nodes.push({
-        id: m.id,
-        position: { x: cx + Math.cos(a) * ring, y: cy + Math.sin(a) * ring },
-        data: { label: m.label },
-        style: {
-          background: `${color}22`,
-          border: `1px solid ${color}`,
-          color: "#f3f4f6",
-          borderRadius: 12,
-          padding: "6px 12px",
-          fontSize: 12,
-          width: "auto",
-          maxWidth: 180,
-        },
-      });
-    });
+      draggable: false,
+      selectable: true,
+    };
   });
 
-  const ids = new Set(graph.nodes.map((n) => n.id));
   const edges: Edge[] = graph.edges
     .filter((e) => ids.has(e.source) && ids.has(e.target))
     .map((e) => ({
       id: `${e.source}->${e.target}`,
       source: e.source,
       target: e.target,
-      style: { stroke: "#ffffff22" },
+      type: "straight",
+      style: { stroke: "#ffffff28", strokeWidth: 1 },
     }));
 
   return { nodes, edges };
@@ -126,7 +91,7 @@ export default function MindMap() {
     load();
   }, [load]);
 
-  const { nodes, edges } = useMemo(() => buildLayout(graph), [graph]);
+  const { nodes, edges } = useMemo(() => buildGraphLayout(graph), [graph]);
   const nodeById = useMemo(
     () => new Map(graph.nodes.map((n) => [n.id, n])),
     [graph]
@@ -134,8 +99,10 @@ export default function MindMap() {
 
   const onNodeClick: NodeMouseHandler = (_e, node) => {
     const found = nodeById.get(node.id);
-    setSelected(found ?? null);
+    if (found) setSelected(found);
   };
+
+  const onPaneClick = () => setSelected(null);
 
   const groupsPresent = useMemo(
     () => [...new Set(graph.nodes.map((n) => n.group || "Topics"))].sort(),
@@ -149,7 +116,7 @@ export default function MindMap() {
           <h1 className="text-sm font-semibold text-white">Mind Map</h1>
           <p className="text-xs text-gray-500">
             Donna&apos;s living map of what she knows about you · {graph.nodes.length}{" "}
-            nodes
+            nodes · click a node to read its note
           </p>
         </div>
         <button
@@ -161,7 +128,6 @@ export default function MindMap() {
         </button>
       </header>
 
-      {/* Legend */}
       {groupsPresent.length > 0 && (
         <div className="absolute bottom-4 left-4 z-10 flex flex-wrap gap-2 rounded-xl border border-white/10 bg-donna-surface/90 p-3 backdrop-blur">
           {groupsPresent.map((g) => (
@@ -193,49 +159,79 @@ export default function MindMap() {
           <ReactFlow
             nodes={nodes}
             edges={edges}
+            nodeTypes={nodeTypes}
             onNodeClick={onNodeClick}
+            onPaneClick={onPaneClick}
             nodesConnectable={false}
             nodesDraggable={false}
+            elementsSelectable
             fitView
+            fitViewOptions={{ padding: 0.3 }}
             proOptions={{ hideAttribution: true }}
-            minZoom={0.2}
+            minZoom={0.15}
+            maxZoom={2.5}
           >
-            <Background color="#ffffff10" gap={24} />
+            <Background color="#ffffff08" gap={32} />
             <Controls showInteractive={false} />
           </ReactFlow>
         </div>
       )}
 
-      {/* Node note panel */}
       {selected && (
-        <div className="absolute right-4 top-20 z-10 w-72 rounded-xl border border-white/10 bg-donna-surface p-4 shadow-xl">
-          <div className="mb-2 flex items-start justify-between gap-2">
-            <div>
-              <div className="text-sm font-semibold text-white">{selected.label}</div>
-              <span
-                className="mt-1 inline-block rounded-full px-2 py-0.5 text-[10px]"
-                style={{
-                  background: `${colorFor(selected.group)}22`,
-                  color: colorFor(selected.group),
-                }}
-              >
-                {selected.group}
-              </span>
+        <>
+          <button
+            type="button"
+            aria-label="Close"
+            className="absolute inset-0 z-20 bg-black/55 backdrop-blur-[2px]"
+            onClick={() => setSelected(null)}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="node-popup-title"
+            className="absolute left-1/2 top-1/2 z-30 w-full max-w-md -translate-x-1/2 -translate-y-1/2 px-4"
+          >
+            <div className="rounded-2xl border border-white/10 bg-donna-surface p-5 shadow-2xl">
+              <div className="mb-4 flex items-start gap-3">
+                <span
+                  className="mt-1 h-4 w-4 shrink-0 rounded-full"
+                  style={{ background: colorFor(selected.group) }}
+                />
+                <div className="min-w-0 flex-1">
+                  <h2
+                    id="node-popup-title"
+                    className="text-base font-semibold text-white"
+                  >
+                    {selected.label}
+                  </h2>
+                  <span
+                    className="mt-1 inline-block rounded-full px-2 py-0.5 text-[10px]"
+                    style={{
+                      background: `${colorFor(selected.group)}22`,
+                      color: colorFor(selected.group),
+                    }}
+                  >
+                    {selected.group}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setSelected(null)}
+                  className="shrink-0 rounded-lg p-1 text-gray-500 hover:bg-white/5 hover:text-white"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-donna-bg px-4 py-3">
+                <p className="text-sm leading-relaxed text-gray-200">
+                  {selected.note || "No note yet."}
+                </p>
+              </div>
+              <p className="mt-3 text-[10px] text-gray-600">
+                Noted by Donna · updated {selected.updatedAt.slice(0, 10)}
+              </p>
             </div>
-            <button
-              onClick={() => setSelected(null)}
-              className="text-gray-500 hover:text-white"
-            >
-              <X size={16} />
-            </button>
           </div>
-          <p className="text-xs leading-relaxed text-gray-300">
-            {selected.note || "No note yet."}
-          </p>
-          <p className="mt-3 text-[10px] text-gray-600">
-            Noted by Donna · updated {selected.updatedAt.slice(0, 10)}
-          </p>
-        </div>
+        </>
       )}
     </div>
   );

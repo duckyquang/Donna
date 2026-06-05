@@ -5,12 +5,33 @@
 //! forward them over a Tauri `Channel` to the UI. Google is recognized but not yet
 //! implemented (Phase 1 ships at least one cloud provider per the roadmap).
 
+use std::sync::OnceLock;
+
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 
 pub const DEFAULT_OLLAMA_HOST: &str = "http://localhost:11434";
+
+/// Keep the model loaded in Ollama between messages (avoids cold-start reloads).
+const OLLAMA_KEEP_ALIVE: &str = "30m";
+/// Smaller context windows prefill faster than model defaults (often 8k–32k).
+const OLLAMA_NUM_CTX: u32 = 4096;
+/// Cap generation length so short replies stay snappy.
+const OLLAMA_NUM_PREDICT: i32 = 1024;
+
+fn http_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(reqwest::Client::new)
+}
+
+fn ollama_chat_options() -> serde_json::Value {
+    serde_json::json!({
+        "num_ctx": OLLAMA_NUM_CTX,
+        "num_predict": OLLAMA_NUM_PREDICT,
+    })
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatTurn {
@@ -72,7 +93,7 @@ struct OllamaTag {
 
 async fn list_ollama_models(host: &str) -> Result<Vec<String>> {
     let url = format!("{}/api/tags", host.trim_end_matches('/'));
-    let resp = reqwest::get(url).await?;
+    let resp = http_client().get(url).send().await?;
     if !resp.status().is_success() {
         return Err(Error::Provider(
             "Could not reach Ollama. Is it installed and running?".into(),
@@ -80,6 +101,33 @@ async fn list_ollama_models(host: &str) -> Result<Vec<String>> {
     }
     let tags: OllamaTags = resp.json().await?;
     Ok(tags.models.into_iter().map(|m| m.name).collect())
+}
+
+/// Load the model into Ollama memory so the first chat message is not stuck waiting
+/// on a cold start. Safe to call repeatedly; runs in the background on app launch.
+pub async fn warm_ollama_model(host: &str, model: &str) -> Result<()> {
+    if model.is_empty() {
+        return Ok(());
+    }
+    let url = format!("{}/api/generate", host.trim_end_matches('/'));
+    let body = serde_json::json!({
+        "model": model,
+        "prompt": ".",
+        "stream": false,
+        "keep_alive": OLLAMA_KEEP_ALIVE,
+        "options": {
+            "num_ctx": 512,
+            "num_predict": 1,
+        },
+    });
+    let resp = http_client().post(url).json(&body).send().await?;
+    if !resp.status().is_success() {
+        return Err(Error::Provider(format!(
+            "Could not warm up Ollama model ({}).",
+            resp.status()
+        )));
+    }
+    Ok(())
 }
 
 async fn stream_ollama(
@@ -93,8 +141,10 @@ async fn stream_ollama(
         "model": model,
         "messages": messages,
         "stream": true,
+        "keep_alive": OLLAMA_KEEP_ALIVE,
+        "options": ollama_chat_options(),
     });
-    let resp = reqwest::Client::new().post(url).json(&body).send().await?;
+    let resp = http_client().post(url).json(&body).send().await?;
     if !resp.status().is_success() {
         return Err(Error::Provider(format!(
             "Ollama returned an error ({}).",
@@ -150,7 +200,7 @@ fn default_openai_models() -> Vec<String> {
 }
 
 async fn list_openai_models(key: &str) -> Result<Vec<String>> {
-    let resp = reqwest::Client::new()
+    let resp = http_client()
         .get("https://api.openai.com/v1/models")
         .bearer_auth(key)
         .send()
@@ -183,7 +233,7 @@ async fn stream_openai(
         "messages": messages,
         "stream": true,
     });
-    let resp = reqwest::Client::new()
+    let resp = http_client()
         .post("https://api.openai.com/v1/chat/completions")
         .bearer_auth(key)
         .json(&body)
@@ -252,7 +302,7 @@ async fn stream_anthropic(
         body["system"] = serde_json::Value::String(system);
     }
 
-    let resp = reqwest::Client::new()
+    let resp = http_client()
         .post("https://api.anthropic.com/v1/messages")
         .header("x-api-key", key)
         .header("anthropic-version", "2023-06-01")

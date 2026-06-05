@@ -22,7 +22,37 @@ pub fn run() {
                 .expect("failed to resolve app data dir");
             let db = Db::open(&dir.join("donna.sqlite"))
                 .expect("failed to open Donna database");
+
+            // Preload the local model while the UI renders so the first reply is faster.
+            let provider = db
+                .get_setting("provider")
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| "ollama".into());
+            let ollama_warmup = if provider == "ollama" {
+                match db.get_setting("model").ok().flatten() {
+                    Some(model) if !model.is_empty() => {
+                        let host = db
+                            .get_setting("ollama_host")
+                            .ok()
+                            .flatten()
+                            .unwrap_or_else(|| providers::DEFAULT_OLLAMA_HOST.into());
+                        Some((host, model))
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
+
             app.manage(db);
+
+            if let Some((host, model)) = ollama_warmup {
+                tauri::async_runtime::spawn(async move {
+                    let _ = providers::warm_ollama_model(&host, &model).await;
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

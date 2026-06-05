@@ -44,12 +44,24 @@ pub fn get_config(db: State<Db>) -> Result<AppConfig> {
     load_config(&db)
 }
 
+fn spawn_ollama_warmup(host: String, model: String) {
+    if model.is_empty() {
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        let _ = providers::warm_ollama_model(&host, &model).await;
+    });
+}
+
 #[tauri::command]
 pub fn save_config(db: State<Db>, config: AppConfig) -> Result<()> {
     db.set_setting("provider", &config.provider)?;
     db.set_setting("model", &config.model)?;
     db.set_setting("ollama_host", &config.ollama_host)?;
     db.set_setting("onboarded", if config.onboarded { "true" } else { "false" })?;
+    if config.provider == "ollama" {
+        spawn_ollama_warmup(config.ollama_host, config.model);
+    }
     Ok(())
 }
 

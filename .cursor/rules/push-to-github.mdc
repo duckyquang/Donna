@@ -1,0 +1,18 @@
+---
+description: Commit and push all changes to GitHub after every completed task
+alwaysApply: true
+---
+
+# Push to GitHub After Every Task
+
+This project is linked to https://github.com/duckyquang/Donna.
+
+After completing any user request that produces file changes:
+
+1. Stage all relevant changes (never commit secrets like `.env` or credentials).
+2. Create a commit with a clear message describing the change.
+3. Push to `origin` on the current branch (`git push -u origin HEAD` if the branch has no upstream).
+
+If there are no changes to commit, skip the commit/push step.
+
+Do not ask for permission to push — pushing is expected after every task unless the user explicitly says otherwise.

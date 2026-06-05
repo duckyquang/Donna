@@ -33,6 +33,32 @@ export type ChatEvent =
   | { type: "done"; messageId: number }
   | { type: "error"; message: string };
 
+export interface KgNode {
+  id: string;
+  label: string;
+  group: string;
+  note: string;
+  updatedAt: string;
+}
+
+export interface KgEdge {
+  source: string;
+  target: string;
+}
+
+export interface KgGraph {
+  nodes: KgNode[];
+  edges: KgEdge[];
+}
+
+interface RawKgNode {
+  id: string;
+  label: string;
+  group: string;
+  note: string;
+  updated_at: string;
+}
+
 // The Rust side serializes config with snake_case; normalize to camelCase here.
 interface RawConfig {
   provider: ProviderId;
@@ -132,5 +158,24 @@ export const api = {
     const channel = new Channel<ChatEvent>();
     channel.onmessage = onEvent;
     await invoke("send_chat", { conversationId, onEvent: channel });
+  },
+
+  async kgGraph(): Promise<KgGraph> {
+    const g = await invoke<{ nodes: RawKgNode[]; edges: KgEdge[] }>("kg_graph");
+    return {
+      nodes: g.nodes.map((n) => ({
+        id: n.id,
+        label: n.label,
+        group: n.group,
+        note: n.note,
+        updatedAt: n.updated_at,
+      })),
+      edges: g.edges,
+    };
+  },
+
+  /** Extract knowledge from a conversation into the graph. Returns nodes upserted. */
+  kgExtract(conversationId: number): Promise<number> {
+    return invoke("kg_extract", { conversationId });
   },
 };

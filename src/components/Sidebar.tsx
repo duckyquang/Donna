@@ -4,6 +4,7 @@ import {
   Bell,
   FileText,
   Calendar,
+  Network,
   Plug,
   Settings as SettingsIcon,
 } from "lucide-react";
@@ -13,6 +14,7 @@ const links = [
   { to: "/notifications", label: "Notifications", icon: Bell },
   { to: "/docs", label: "Docs", icon: FileText },
   { to: "/calendar", label: "Calendar", icon: Calendar },
+  { to: "/mind-map", label: "Mind Map", icon: Network },
   { to: "/integrations", label: "Integrations", icon: Plug },
   { to: "/settings", label: "Settings", icon: SettingsIcon },
 ];

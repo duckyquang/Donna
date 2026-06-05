@@ -75,6 +75,10 @@ The home base. The user converses with Donna to:
 Chat is also where Donna surfaces what she has learned and asks for confirmation before
 acting on the user's behalf.
 
+**Formatted output**: Donna's replies are rendered as Markdown so they are easy to read
+— `**bold**` becomes **bold**, lists, headings, inline `code`, code blocks, and links all
+render properly (including while the response is still streaming).
+
 ### 4.2 Notifications
 Donna proactively pushes **native OS notifications** to remind the user of things they
 need to do, check on, or should consider. Examples:
@@ -110,6 +114,23 @@ Roadmap: Notion, Telegram, GitHub, Linear, and more.
 A knowledge graph of everything Donna learns — facts, people, projects, preferences,
 routines. Visible and editable by the user (privacy + trust). See §6.
 
+### 4.7 Mind Map (Knowledge Cartography)
+A visual, node-based map of everything Donna knows about the user — the knowledge base
+rendered as cartography rather than a list.
+- **Node-based cartography**: each piece of knowledge (a person, project, preference,
+  routine, topic, …) is a node; relationships between them are edges.
+- **Grouped into chunks, not random**: nodes are clustered by category/theme (e.g.
+  *People*, *Projects*, *Preferences*, *Routines*, *Health*), each cluster visually
+  grouped and color-coded, so the map reads as organized regions rather than scattered
+  dots.
+- **Continuously updated by Donna**: after conversations (and later, integration events),
+  Donna extracts new knowledge and merges it into the map — adding/updating nodes and
+  edges over time. The map grows as she learns.
+- **Click a node for Donna's note**: selecting a node reveals a short, human-readable note
+  Donna wrote about that entity (what it is and why it matters), plus its connections.
+
+This is the visual front-end of the §9 knowledge graph.
+
 ---
 
 ## 5. Architecture
@@ -117,7 +138,7 @@ routines. Visible and editable by the user (privacy + trust). See §6.
 ```mermaid
 flowchart TD
   subgraph app [Tauri Desktop App]
-    UI["React + TS + Tailwind UI<br/>(Chat, Notifications, Docs, Calendar, Integrations, Settings)"]
+    UI["React + TS + Tailwind UI<br/>(Chat, Notifications, Docs, Calendar, Mind Map, Integrations, Settings)"]
     Core["Rust Core<br/>(commands, scheduler, secure storage)"]
   end
   UI <-->|Tauri IPC| Core
@@ -222,6 +243,17 @@ Donna builds a personal knowledge graph stored in SQLite:
 Retrieval is hybrid: structured lookups for facts + embedding similarity for fuzzy
 recall. Memory is surfaced and editable in the Memory view to keep the user in control.
 
+**Visualized as a Mind Map (§4.7).** The graph is stored as nodes and edges in SQLite:
+- `kg_nodes(id, label, group, note, created_at, updated_at)` — `group` is the cluster
+  the node belongs to (People, Projects, Preferences, Routines, Topics, …), and `note`
+  is the short, human-readable explanation Donna writes and shows on click.
+- `kg_edges(id, source, target)` — relationships between nodes.
+
+After each conversation, Donna runs a **knowledge-extraction** pass: she asks the model
+to return structured JSON of nodes (with a stable id, label, group, and note) and edges,
+then **upserts** them into the graph so the map updates continuously without duplicating
+existing knowledge. The Mind Map view lays nodes out by group into visual clusters.
+
 A future **calibration** concept (inspired by Cobblr) can score how well Donna knows the
 user's voice and gate higher-autonomy actions behind higher confidence.
 
@@ -273,10 +305,10 @@ donna/
 ├── src/                       # Frontend (React + TS)
 │   ├── main.tsx
 │   ├── App.tsx                # Sidebar shell + routing
-│   ├── routes/                # Chat, Notifications, Docs, Calendar, Integrations, Settings
-│   ├── components/            # Shared UI components
+│   ├── routes/                # Chat, Notifications, Docs, Calendar, MindMap, Integrations, Settings
+│   ├── components/            # Shared UI components (incl. Markdown renderer)
 │   └── lib/
-│       ├── models/            # Model provider interface + Ollama/cloud stubs
+│       ├── models/            # Model provider catalog
 │       └── memory/            # Knowledge graph client
 ├── src-tauri/                 # Backend (Rust + Tauri)
 │   ├── Cargo.toml
@@ -315,6 +347,12 @@ donna/
 - Richer knowledge graph + retrieval.
 - Voice/style calibration and tiered autonomy (confirm → act → autonomous).
 - Custom user-described routines in natural language.
+
+### Cross-cutting (shipped incrementally)
+- **Formatted chat output**: Markdown rendering of Donna's replies (bold, lists, code,
+  links) including during streaming.
+- **Mind Map / Knowledge Cartography**: a node-based, clustered visualization of the
+  knowledge graph that Donna continuously updates; click a node for Donna's note.
 
 ---
 

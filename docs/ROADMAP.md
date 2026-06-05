@@ -38,6 +38,14 @@ for the full architecture and design rationale behind each item.
 - [ ] User-described routines in natural language
 - [ ] Memory view: browse, edit, and audit what Donna knows
 
+## Cross-cutting features
+- [x] Formatted chat output — render Donna's replies as Markdown (bold, lists, code,
+      links), including while streaming
+- [x] Mind Map / Knowledge Cartography — node-based, clustered visualization of the
+      knowledge graph, continuously updated by Donna, with click-to-reveal notes per node
+- [ ] Editable nodes/notes directly from the Mind Map
+- [ ] Embedding-based retrieval over the knowledge graph
+
 ## Ongoing
 - [ ] More integrations (Notion, Telegram, GitHub, Linear, …)
 - [ ] Cross-platform packaged installers (macOS, Windows, Linux)

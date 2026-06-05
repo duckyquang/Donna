@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 use tauri::State;
 
-use crate::db::{Conversation, Db, Message};
+use crate::db::{Conversation, Db, KgEdge, KgNode, Message};
 use crate::error::{Error, Result};
 use crate::providers::{self, ChatTurn};
 use crate::secrets;
@@ -200,4 +200,154 @@ pub async fn send_chat(
             Err(Error::Provider(e.to_string()))
         }
     }
+}
+
+// --- Knowledge graph / Mind Map --------------------------------------------
+
+#[derive(Serialize)]
+pub struct KgGraph {
+    pub nodes: Vec<KgNode>,
+    pub edges: Vec<KgEdge>,
+}
+
+#[tauri::command]
+pub fn kg_graph(db: State<Db>) -> Result<KgGraph> {
+    Ok(KgGraph {
+        nodes: db.list_nodes()?,
+        edges: db.list_edges()?,
+    })
+}
+
+const EXTRACT_PROMPT: &str = "You are building a personal knowledge graph about the \
+user from the conversation below. Extract durable facts about the user: people, \
+projects, preferences, routines, places, health, and topics they care about. Ignore \
+trivia and one-off chit-chat.\n\nReturn ONLY valid JSON (no prose, no code fences) with \
+this exact shape:\n{\n  \"nodes\": [{\"id\": \"kebab-case-stable-id\", \"label\": \
+\"Short Name\", \"group\": \"People|Projects|Preferences|Routines|Places|Health|Topics\", \
+\"note\": \"one or two sentence note about why this matters to the user\"}],\n  \
+\"edges\": [{\"source\": \"node-id\", \"target\": \"node-id\"}]\n}\nReuse the exact ids of \
+existing nodes when referring to the same thing so they are updated, not duplicated. If \
+there is nothing worth saving, return {\"nodes\":[],\"edges\":[]}.";
+
+/// Extract knowledge from a conversation and merge it into the graph. Best-effort:
+/// returns the number of nodes upserted. Safe to call after each chat turn.
+#[tauri::command]
+pub async fn kg_extract(db: State<'_, Db>, conversation_id: i64) -> Result<usize> {
+    let config = load_config(&db)?;
+    if config.model.is_empty() {
+        return Ok(0);
+    }
+    let api_key = secrets::get_api_key(&config.provider)?;
+
+    // Transcript of the conversation.
+    let transcript: String = db
+        .get_messages(conversation_id)?
+        .iter()
+        .map(|m| format!("{}: {}", m.role, m.content))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if transcript.trim().is_empty() {
+        return Ok(0);
+    }
+
+    // Existing nodes, so the model reuses ids instead of duplicating.
+    let existing: String = db
+        .list_nodes()?
+        .iter()
+        .map(|n| format!("- {} ({}) [{}]", n.id, n.label, n.group))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let user_content = format!(
+        "Existing nodes:\n{}\n\nConversation:\n{}",
+        if existing.is_empty() { "(none)" } else { &existing },
+        transcript
+    );
+
+    let turns = vec![
+        ChatTurn {
+            role: "system".into(),
+            content: EXTRACT_PROMPT.into(),
+        },
+        ChatTurn {
+            role: "user".into(),
+            content: user_content,
+        },
+    ];
+
+    let raw = providers::complete(
+        &config.provider,
+        &config.model,
+        api_key,
+        &config.ollama_host,
+        &turns,
+    )
+    .await?;
+
+    let parsed = match extract_json(&raw) {
+        Some(v) => v,
+        None => return Ok(0),
+    };
+
+    let mut count = 0usize;
+    if let Some(nodes) = parsed.get("nodes").and_then(|n| n.as_array()) {
+        for node in nodes {
+            let label = node.get("label").and_then(|v| v.as_str()).unwrap_or("");
+            if label.trim().is_empty() {
+                continue;
+            }
+            let id = node
+                .get("id")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.trim().is_empty())
+                .map(slugify)
+                .unwrap_or_else(|| slugify(label));
+            let group = node
+                .get("group")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Topics");
+            let note = node.get("note").and_then(|v| v.as_str()).unwrap_or("");
+            db.upsert_node(&id, label, group, note)?;
+            count += 1;
+        }
+    }
+    if let Some(edges) = parsed.get("edges").and_then(|e| e.as_array()) {
+        for edge in edges {
+            let source = edge.get("source").and_then(|v| v.as_str()).map(slugify);
+            let target = edge.get("target").and_then(|v| v.as_str()).map(slugify);
+            if let (Some(s), Some(t)) = (source, target) {
+                if !s.is_empty() && !t.is_empty() && s != t {
+                    db.add_edge(&s, &t)?;
+                }
+            }
+        }
+    }
+
+    Ok(count)
+}
+
+/// Pull the first JSON object out of a possibly noisy model response.
+fn extract_json(text: &str) -> Option<serde_json::Value> {
+    let start = text.find('{')?;
+    let end = text.rfind('}')?;
+    if end <= start {
+        return None;
+    }
+    serde_json::from_str(&text[start..=end]).ok()
+}
+
+/// Normalize a label/id into a stable kebab-case identifier.
+fn slugify(input: &str) -> String {
+    let mut out = String::new();
+    let mut prev_dash = false;
+    for ch in input.trim().to_lowercase().chars() {
+        if ch.is_alphanumeric() {
+            out.push(ch);
+            prev_dash = false;
+        } else if !prev_dash && !out.is_empty() {
+            out.push('-');
+            prev_dash = true;
+        }
+    }
+    out.trim_matches('-').to_string()
 }

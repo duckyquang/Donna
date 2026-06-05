@@ -25,3 +25,111 @@ body {
   font-family: Inter, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+
+/* Markdown rendering for Donna's chat replies */
+.md {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  word-break: break-word;
+}
+.md > :first-child {
+  margin-top: 0;
+}
+.md > :last-child {
+  margin-bottom: 0;
+}
+.md p {
+  margin: 0.5rem 0;
+}
+.md strong {
+  font-weight: 700;
+  color: #fff;
+}
+.md em {
+  font-style: italic;
+}
+.md a {
+  color: var(--donna-accent-light);
+  text-decoration: underline;
+}
+.md h1,
+.md h2,
+.md h3 {
+  font-weight: 600;
+  color: #fff;
+  margin: 0.75rem 0 0.4rem;
+  line-height: 1.3;
+}
+.md h1 {
+  font-size: 1.15rem;
+}
+.md h2 {
+  font-size: 1.05rem;
+}
+.md h3 {
+  font-size: 1rem;
+}
+.md ul,
+.md ol {
+  margin: 0.5rem 0;
+  padding-left: 1.25rem;
+}
+.md ul {
+  list-style: disc;
+}
+.md ol {
+  list-style: decimal;
+}
+.md li {
+  margin: 0.2rem 0;
+}
+.md code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8125rem;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.25rem;
+}
+.md pre {
+  background: var(--donna-bg);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  overflow-x: auto;
+  margin: 0.5rem 0;
+}
+.md pre code {
+  background: transparent;
+  padding: 0;
+}
+.md blockquote {
+  border-left: 3px solid rgba(255, 255, 255, 0.2);
+  padding-left: 0.75rem;
+  color: #cbd5e1;
+  margin: 0.5rem 0;
+}
+.md table {
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+  width: 100%;
+}
+.md th,
+.md td {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 0.35rem 0.55rem;
+  text-align: left;
+}
+
+/* Mind Map (React Flow) tweaks */
+.mindmap .react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+}
+.mindmap .react-flow__controls button {
+  background: var(--donna-surface);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e5e7eb;
+}
+.mindmap .react-flow__controls button:hover {
+  background: var(--donna-surface-raised, #1e1a16);
+}

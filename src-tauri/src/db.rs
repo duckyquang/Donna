@@ -29,6 +29,22 @@ pub struct Message {
     pub created_at: String,
 }
 
+/// A node in Donna's knowledge graph (one piece of knowledge about the user).
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct KgNode {
+    pub id: String,
+    pub label: String,
+    pub group: String,
+    pub note: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct KgEdge {
+    pub source: String,
+    pub target: String,
+}
+
 impl Db {
     /// Open (or create) the database at `path` and run migrations.
     pub fn open(path: &std::path::Path) -> Result<Self> {
@@ -130,6 +146,65 @@ impl Db {
         })?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
+
+    // --- Knowledge graph ---------------------------------------------------
+
+    /// Insert or update a knowledge-graph node (keyed by stable id).
+    pub fn upsert_node(&self, id: &str, label: &str, group: &str, note: &str) -> Result<()> {
+        let conn = self.0.lock().unwrap();
+        let now = now_iso();
+        conn.execute(
+            "INSERT INTO kg_nodes (id, label, \"group\", note, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?5)
+             ON CONFLICT(id) DO UPDATE SET
+                label = excluded.label,
+                \"group\" = excluded.\"group\",
+                note = excluded.note,
+                updated_at = excluded.updated_at",
+            rusqlite::params![id, label, group, note, now],
+        )?;
+        Ok(())
+    }
+
+    /// Insert an edge if it does not already exist.
+    pub fn add_edge(&self, source: &str, target: &str) -> Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO kg_edges (source, target) VALUES (?1, ?2)",
+            [source, target],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_nodes(&self) -> Result<Vec<KgNode>> {
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, label, \"group\", note, updated_at FROM kg_nodes
+             ORDER BY \"group\", label",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(KgNode {
+                id: row.get(0)?,
+                label: row.get(1)?,
+                group: row.get(2)?,
+                note: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn list_edges(&self) -> Result<Vec<KgEdge>> {
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT source, target FROM kg_edges")?;
+        let rows = stmt.query_map([], |row| {
+            Ok(KgEdge {
+                source: row.get(0)?,
+                target: row.get(1)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
 }
 
 fn migrate(conn: &Connection) -> Result<()> {
@@ -151,7 +226,20 @@ fn migrate(conn: &Connection) -> Result<()> {
             created_at      TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_messages_conversation
-            ON messages(conversation_id);",
+            ON messages(conversation_id);
+        CREATE TABLE IF NOT EXISTS kg_nodes (
+            id         TEXT PRIMARY KEY,
+            label      TEXT NOT NULL,
+            \"group\"    TEXT NOT NULL,
+            note       TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS kg_edges (
+            source TEXT NOT NULL,
+            target TEXT NOT NULL,
+            PRIMARY KEY (source, target)
+        );",
     )?;
     Ok(())
 }

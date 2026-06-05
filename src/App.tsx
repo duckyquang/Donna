@@ -7,6 +7,7 @@ import Chat from "./routes/Chat";
 import Notifications from "./routes/Notifications";
 import Docs from "./routes/Docs";
 import Calendar from "./routes/Calendar";
+import MindMap from "./routes/MindMap";
 import Integrations from "./routes/Integrations";
 import Settings from "./routes/Settings";
 import Onboarding from "./routes/Onboarding";
@@ -47,6 +48,7 @@ export default function App() {
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/docs" element={<Docs />} />
           <Route path="/calendar" element={<Calendar />} />
+          <Route path="/mind-map" element={<MindMap />} />
           <Route path="/integrations" element={<Integrations />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>

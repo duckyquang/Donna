@@ -69,6 +69,8 @@ pub fn run() {
             commands::get_messages,
             commands::add_message,
             commands::send_chat,
+            commands::kg_graph,
+            commands::kg_extract,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Donna");

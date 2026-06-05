@@ -3,6 +3,7 @@ import { Plus, Send, Trash2 } from "lucide-react";
 import { api, type Conversation, type Message } from "../lib/api";
 import { useConfig } from "../lib/useConfig";
 import { Spinner } from "../components/ui";
+import { Markdown } from "../components/Markdown";
 
 export default function Chat() {
   const { config } = useConfig();
@@ -91,6 +92,8 @@ export default function Chat() {
         }
       });
       await loadMessages(convId);
+      // Let Donna update her knowledge map in the background (best-effort).
+      api.kgExtract(convId).catch(() => {});
     } catch (e) {
       setError(String(e));
     } finally {
@@ -218,13 +221,13 @@ function Bubble({
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`max-w-[80%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm ${
+        className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${
           isUser
-            ? "bg-donna-accent text-white"
+            ? "whitespace-pre-wrap bg-donna-accent text-white"
             : "border border-white/10 bg-donna-surface text-gray-100"
         } ${pending ? "opacity-90" : ""}`}
       >
-        {content}
+        {isUser ? content : <Markdown content={content} />}
       </div>
     </div>
   );

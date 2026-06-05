@@ -62,6 +62,23 @@ pub async fn stream_chat(
     }
 }
 
+/// Run a chat completion and return the full text (collects the stream). Used for
+/// non-interactive tasks like knowledge extraction.
+pub async fn complete(
+    provider: &str,
+    model: &str,
+    api_key: Option<String>,
+    ollama_host: &str,
+    messages: &[ChatTurn],
+) -> Result<String> {
+    let mut out = String::new();
+    stream_chat(provider, model, api_key, ollama_host, messages, |t| {
+        out.push_str(t)
+    })
+    .await?;
+    Ok(out)
+}
+
 /// List the models available for a provider.
 pub async fn list_models(
     provider: &str,

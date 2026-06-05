@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from "react";
 import { api, type AppConfig } from "./api";
+import { isDesktopApp } from "./tauri";
 
 interface ConfigContextValue {
   config: AppConfig | null;
@@ -31,6 +32,10 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
+    if (!isDesktopApp()) {
+      setLoading(false);
+      return;
+    }
     refresh()
       .catch(() => setConfig(null))
       .finally(() => setLoading(false));

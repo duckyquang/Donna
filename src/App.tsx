@@ -1,6 +1,8 @@
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import DesktopRequired from "./components/DesktopRequired";
 import { Sidebar } from "./components/Sidebar";
 import { useConfig } from "./lib/useConfig";
+import { isDesktopApp } from "./lib/tauri";
 import Chat from "./routes/Chat";
 import Notifications from "./routes/Notifications";
 import Docs from "./routes/Docs";
@@ -12,6 +14,10 @@ import Onboarding from "./routes/Onboarding";
 export default function App() {
   const { config, loading } = useConfig();
   const location = useLocation();
+
+  if (!isDesktopApp()) {
+    return <DesktopRequired />;
+  }
 
   if (loading) {
     return (

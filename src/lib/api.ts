@@ -1,5 +1,11 @@
-import { invoke, Channel } from "@tauri-apps/api/core";
+import { invoke as tauriInvoke, Channel } from "@tauri-apps/api/core";
 import type { ProviderId } from "./models/providers";
+import { ensureDesktopApp } from "./tauri";
+
+function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  ensureDesktopApp();
+  return tauriInvoke<T>(cmd, args);
+}
 
 export interface AppConfig {
   provider: ProviderId;

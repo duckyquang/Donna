@@ -59,6 +59,65 @@ interface RawKgNode {
   updated_at: string;
 }
 
+export interface IntegrationStatus {
+  id: string;
+  name: string;
+  connected: boolean;
+  needsSetup: boolean;
+}
+
+interface RawIntegrationStatus {
+  id: string;
+  name: string;
+  connected: boolean;
+  needs_setup: boolean;
+}
+
+export interface CalendarEvent {
+  id?: string;
+  summary?: string;
+  description?: string;
+  start: string;
+  end: string;
+  htmlLink?: string;
+}
+
+interface RawCalendarEvent {
+  id?: string;
+  summary?: string;
+  description?: string;
+  start: string;
+  end: string;
+  html_link?: string;
+}
+
+export interface SlackChannel {
+  id: string;
+  name: string;
+}
+
+function toEvent(e: RawCalendarEvent): CalendarEvent {
+  return {
+    id: e.id,
+    summary: e.summary,
+    description: e.description,
+    start: e.start,
+    end: e.end,
+    htmlLink: e.html_link,
+  };
+}
+
+function fromEvent(e: CalendarEvent): RawCalendarEvent {
+  return {
+    id: e.id,
+    summary: e.summary,
+    description: e.description,
+    start: e.start,
+    end: e.end,
+    html_link: e.htmlLink,
+  };
+}
+
 // The Rust side serializes config with snake_case; normalize to camelCase here.
 interface RawConfig {
   provider: ProviderId;
@@ -177,5 +236,71 @@ export const api = {
   /** Extract knowledge from a conversation into the graph. Returns nodes upserted. */
   kgExtract(conversationId: number): Promise<number> {
     return invoke("kg_extract", { conversationId });
+  },
+
+  // --- Integrations ---
+  async integrationsStatus(): Promise<IntegrationStatus[]> {
+    const rows = await invoke<RawIntegrationStatus[]>("integrations_status");
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      connected: r.connected,
+      needsSetup: r.needs_setup,
+    }));
+  },
+
+  googleSetClient(clientId: string, clientSecret: string): Promise<void> {
+    return invoke("google_set_client", { clientId, clientSecret });
+  },
+  googleConnect(): Promise<void> {
+    return invoke("google_connect");
+  },
+  googleDisconnect(): Promise<void> {
+    return invoke("google_disconnect");
+  },
+
+  slackSetToken(token: string): Promise<void> {
+    return invoke("slack_set_token", { token });
+  },
+  slackDisconnect(): Promise<void> {
+    return invoke("slack_disconnect");
+  },
+  slackListChannels(): Promise<SlackChannel[]> {
+    return invoke("slack_list_channels");
+  },
+  slackSendMessage(channel: string, text: string): Promise<void> {
+    return invoke("slack_send_message", { channel, text });
+  },
+
+  fathomSetKey(key: string): Promise<void> {
+    return invoke("fathom_set_key", { key });
+  },
+  fathomDisconnect(): Promise<void> {
+    return invoke("fathom_disconnect");
+  },
+
+  // --- Calendar (two-way Google Calendar sync) ---
+  async calendarListEvents(timeMin: string, timeMax: string): Promise<CalendarEvent[]> {
+    const rows = await invoke<RawCalendarEvent[]>("calendar_list_events", {
+      timeMin,
+      timeMax,
+    });
+    return rows.map(toEvent);
+  },
+  async calendarCreateEvent(event: CalendarEvent): Promise<CalendarEvent> {
+    return toEvent(
+      await invoke<RawCalendarEvent>("calendar_create_event", { event: fromEvent(event) })
+    );
+  },
+  async calendarUpdateEvent(id: string, event: CalendarEvent): Promise<CalendarEvent> {
+    return toEvent(
+      await invoke<RawCalendarEvent>("calendar_update_event", {
+        id,
+        event: fromEvent(event),
+      })
+    );
+  },
+  calendarDeleteEvent(id: string): Promise<void> {
+    return invoke("calendar_delete_event", { id });
   },
 };

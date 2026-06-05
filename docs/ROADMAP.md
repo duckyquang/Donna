@@ -20,11 +20,14 @@ for the full architecture and design rationale behind each item.
 - [x] App icon source (`src-tauri/icons/icon.png`); run `npm run tauri icon` before
       the first packaged build
 
-## Phase 2 — Integrations
-- [ ] Google OAuth (Gmail, Calendar, Docs/Drive)
-- [ ] Calendar view with two-way Google Calendar sync
-- [ ] Slack connector (read channels, send messages)
-- [ ] Fathom connector (pull transcripts/summaries)
+## Phase 2 — Integrations ✅
+- [x] Google OAuth (loopback + PKCE, bring-your-own client); scopes cover
+      Gmail, Calendar, Docs/Drive
+- [x] Calendar view with two-way Google Calendar sync (list/create/update/delete)
+- [x] Slack connector (read channels, send messages)
+- [x] Fathom connector (secure API key connection; transcript actions land with Docs)
+- [x] Integrations Hub UI with per-service connect/disconnect + status
+- [ ] Full Gmail/Docs/Drive actions (wired up alongside their features)
 
 ## Phase 3 — Proactive routines
 - [ ] Background scheduler in the Rust core

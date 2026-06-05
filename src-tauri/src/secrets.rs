@@ -9,35 +9,53 @@ use crate::error::{Error, Result};
 
 const SERVICE: &str = "ai.donna.app";
 
-fn entry(provider: &str) -> Result<Entry> {
-    Entry::new(SERVICE, &format!("api_key:{provider}")).map_err(Error::from)
+fn entry(key: &str) -> Result<Entry> {
+    Entry::new(SERVICE, key).map_err(Error::from)
 }
 
-/// Store (or replace) the API key for a provider.
-pub fn set_api_key(provider: &str, key: &str) -> Result<()> {
-    entry(provider)?.set_password(key)?;
+/// Store (or replace) an arbitrary secret under a stable key.
+pub fn set_secret(key: &str, value: &str) -> Result<()> {
+    entry(key)?.set_password(value)?;
     Ok(())
 }
 
-/// Retrieve the API key for a provider, if one is stored.
-pub fn get_api_key(provider: &str) -> Result<Option<String>> {
-    match entry(provider)?.get_password() {
-        Ok(k) => Ok(Some(k)),
+/// Retrieve a secret, if one is stored under `key`.
+pub fn get_secret(key: &str) -> Result<Option<String>> {
+    match entry(key)?.get_password() {
+        Ok(v) => Ok(Some(v)),
         Err(keyring::Error::NoEntry) => Ok(None),
         Err(e) => Err(Error::from(e)),
     }
 }
 
-/// Whether a key exists for a provider (without returning it).
-pub fn has_api_key(provider: &str) -> Result<bool> {
-    Ok(get_api_key(provider)?.is_some())
+/// Whether a secret exists under `key`.
+pub fn has_secret(key: &str) -> Result<bool> {
+    Ok(get_secret(key)?.is_some())
 }
 
-/// Remove a provider's stored key.
-pub fn delete_api_key(provider: &str) -> Result<()> {
-    match entry(provider)?.delete_password() {
+/// Remove a secret.
+pub fn delete_secret(key: &str) -> Result<()> {
+    match entry(key)?.delete_password() {
         Ok(()) => Ok(()),
         Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(Error::from(e)),
     }
+}
+
+// --- Convenience wrappers for model-provider API keys ----------------------
+
+pub fn set_api_key(provider: &str, key: &str) -> Result<()> {
+    set_secret(&format!("api_key:{provider}"), key)
+}
+
+pub fn get_api_key(provider: &str) -> Result<Option<String>> {
+    get_secret(&format!("api_key:{provider}"))
+}
+
+pub fn has_api_key(provider: &str) -> Result<bool> {
+    has_secret(&format!("api_key:{provider}"))
+}
+
+pub fn delete_api_key(provider: &str) -> Result<()> {
+    delete_secret(&format!("api_key:{provider}"))
 }

@@ -105,12 +105,12 @@ quality? Plug in your own key. Your choice, switchable anytime.
 
 | Service | What Donna can do | Status |
 | --- | --- | --- |
-| Gmail | Read, search, draft, organize email | Planned |
-| Google Calendar | View, create, and edit events | Planned |
-| Google Docs / Drive | Create and update docs and files | Planned |
-| Slack | Read channels and send messages | Planned |
+| Google Calendar | View, create, edit, and delete events (two-way sync) | Available |
+| Slack | Read channels and send messages | Available |
+| Fathom | Secure connection (meeting → doc actions land with Docs) | Available |
+| Gmail | Read, search, draft, organize email | Auth ready (actions soon) |
+| Google Docs / Drive | Create and update docs and files | Auth ready (actions soon) |
 | WhatsApp | Message Donna (inbound) | Planned |
-| Fathom | Turn meeting recordings into docs | Planned |
 | Notion, Telegram, GitHub, Linear… | More connectors | On the roadmap |
 
 See [`CONTEXT.md`](CONTEXT.md) for the full integration and auth design.
@@ -176,7 +176,7 @@ the full roadmap.
 
 - **Phase 0 — Foundation:** scaffold, docs, build tooling ✅
 - **Phase 1 — MVP:** onboarding wizard, working chat, local persistence, settings ✅
-- **Phase 2 — Integrations:** Google Workspace, calendar sync, Slack, Fathom
+- **Phase 2 — Integrations:** Google Workspace, calendar sync, Slack, Fathom ✅
 - **Phase 3 — Proactive:** background scheduler, notifications, auto-docs, routines
 - **Phase 4 — Learning:** richer memory, voice calibration, natural-language routines
 

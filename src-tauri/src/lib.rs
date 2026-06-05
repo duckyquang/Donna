@@ -5,6 +5,8 @@
 mod commands;
 mod db;
 mod error;
+mod integrations;
+mod oauth;
 mod providers;
 mod secrets;
 
@@ -71,6 +73,20 @@ pub fn run() {
             commands::send_chat,
             commands::kg_graph,
             commands::kg_extract,
+            commands::integrations_status,
+            commands::google_set_client,
+            commands::google_connect,
+            commands::google_disconnect,
+            commands::calendar_list_events,
+            commands::calendar_create_event,
+            commands::calendar_update_event,
+            commands::calendar_delete_event,
+            commands::slack_set_token,
+            commands::slack_disconnect,
+            commands::slack_list_channels,
+            commands::slack_send_message,
+            commands::fathom_set_key,
+            commands::fathom_disconnect,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Donna");

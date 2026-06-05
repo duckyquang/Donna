@@ -9,6 +9,7 @@ use tauri::State;
 
 use crate::db::{Conversation, Db, KgEdge, KgNode, Message};
 use crate::error::{Error, Result};
+use crate::integrations::{self, google, slack};
 use crate::providers::{self, ChatTurn};
 use crate::secrets;
 
@@ -350,4 +351,84 @@ fn slugify(input: &str) -> String {
         }
     }
     out.trim_matches('-').to_string()
+}
+
+// --- Integrations ----------------------------------------------------------
+
+#[tauri::command]
+pub fn integrations_status() -> Result<Vec<integrations::IntegrationStatus>> {
+    integrations::status()
+}
+
+#[tauri::command]
+pub fn google_set_client(client_id: String, client_secret: String) -> Result<()> {
+    google::set_client(&client_id, &client_secret)
+}
+
+#[tauri::command]
+pub async fn google_connect() -> Result<()> {
+    google::connect().await
+}
+
+#[tauri::command]
+pub fn google_disconnect() -> Result<()> {
+    google::disconnect()
+}
+
+#[tauri::command]
+pub async fn calendar_list_events(
+    time_min: String,
+    time_max: String,
+) -> Result<Vec<google::CalendarEvent>> {
+    google::list_events(&time_min, &time_max).await
+}
+
+#[tauri::command]
+pub async fn calendar_create_event(
+    event: google::CalendarEvent,
+) -> Result<google::CalendarEvent> {
+    google::create_event(&event).await
+}
+
+#[tauri::command]
+pub async fn calendar_update_event(
+    id: String,
+    event: google::CalendarEvent,
+) -> Result<google::CalendarEvent> {
+    google::update_event(&id, &event).await
+}
+
+#[tauri::command]
+pub async fn calendar_delete_event(id: String) -> Result<()> {
+    google::delete_event(&id).await
+}
+
+#[tauri::command]
+pub fn slack_set_token(token: String) -> Result<()> {
+    slack::set_token(&token)
+}
+
+#[tauri::command]
+pub fn slack_disconnect() -> Result<()> {
+    slack::disconnect()
+}
+
+#[tauri::command]
+pub async fn slack_list_channels() -> Result<Vec<slack::SlackChannel>> {
+    slack::list_channels().await
+}
+
+#[tauri::command]
+pub async fn slack_send_message(channel: String, text: String) -> Result<()> {
+    slack::send_message(&channel, &text).await
+}
+
+#[tauri::command]
+pub fn fathom_set_key(key: String) -> Result<()> {
+    integrations::fathom::set_key(&key)
+}
+
+#[tauri::command]
+pub fn fathom_disconnect() -> Result<()> {
+    integrations::fathom::disconnect()
 }

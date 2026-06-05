@@ -11,13 +11,14 @@ for the full architecture and design rationale behind each item.
 - [x] Memory/knowledge-graph client stubs
 - [x] Rust core command surface (chat, list_models, schedule_routine, init_db)
 
-## Phase 1 — MVP
-- [ ] Onboarding wizard: pick a local model (Ollama) or paste a cloud API key
-- [ ] Secure key storage in the OS keychain (Rust core)
-- [ ] Working Chat with streaming responses (Ollama + at least one cloud provider)
-- [ ] SQLite persistence for chats and basic memory
-- [ ] Settings: provider/model selection
-- [ ] App icons + first packaged dev build
+## Phase 1 — MVP ✅
+- [x] Onboarding wizard: pick a local model (Ollama) or paste a cloud API key
+- [x] Secure key storage in the OS keychain (Rust core)
+- [x] Working Chat with streaming responses (Ollama + OpenAI + Anthropic)
+- [x] SQLite persistence for conversations and messages
+- [x] Settings: provider/model selection + key management
+- [x] App icon source (`src-tauri/icons/icon.png`); run `npm run tauri icon` before
+      the first packaged build
 
 ## Phase 2 — Integrations
 - [ ] Google OAuth (Gmail, Calendar, Docs/Drive)

@@ -175,7 +175,7 @@ the full roadmap.
 ## Roadmap
 
 - **Phase 0 — Foundation:** scaffold, docs, build tooling ✅
-- **Phase 1 — MVP:** onboarding wizard, working chat, local persistence, settings
+- **Phase 1 — MVP:** onboarding wizard, working chat, local persistence, settings ✅
 - **Phase 2 — Integrations:** Google Workspace, calendar sync, Slack, Fathom
 - **Phase 3 — Proactive:** background scheduler, notifications, auto-docs, routines
 - **Phase 4 — Learning:** richer memory, voice calibration, natural-language routines

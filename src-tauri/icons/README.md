@@ -1,13 +1,14 @@
 # App Icons
 
-This folder holds the application icons referenced by `../tauri.conf.json`.
+`icon.png` is Donna's source app icon (1024x1024), referenced by `../tauri.conf.json`.
 
-Before the first packaged build (Phase 1), generate the icon set from a single source
-PNG using the Tauri CLI:
+To generate the full platform icon set (`.ico`, `.icns`, and the various PNG sizes that
+some targets require) from this source, run:
 
 ```bash
-npm run tauri icon path/to/source-icon.png
+npm run tauri icon src-tauri/icons/icon.png
 ```
 
-This produces `icon.png`, `icon.ico`, `icon.icns`, and the various platform sizes Tauri
-expects. They are intentionally not committed yet during Phase 0.
+This produces the complete icon set Tauri expects for packaged builds across macOS,
+Windows, and Linux. For `tauri dev` and macOS bundles, the single `icon.png` is enough
+to get started.

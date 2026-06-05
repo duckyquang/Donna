@@ -1,4 +1,4 @@
-import { PageShell, Placeholder } from "../components/PageShell";
+import { PageShell } from "../components/PageShell";
 
 const integrations = [
   "Gmail",

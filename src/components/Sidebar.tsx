@@ -19,9 +19,9 @@ const links = [
 
 export function Sidebar() {
   return (
-    <aside className="flex w-60 flex-col border-r border-white/10 bg-[#15151c] p-4">
+    <aside className="flex w-60 flex-col border-r border-white/10 bg-donna-surface p-4">
       <div className="mb-8 flex items-center gap-2 px-2">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#7c5cff] font-bold">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-donna-accent font-bold text-white">
           D
         </div>
         <span className="text-lg font-semibold">Donna</span>
@@ -35,7 +35,7 @@ export function Sidebar() {
             className={({ isActive }) =>
               `flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                 isActive
-                  ? "bg-white/10 text-white"
+                  ? "bg-donna-accent/15 text-donna-accent-light"
                   : "text-gray-400 hover:bg-white/5 hover:text-white"
               }`
             }

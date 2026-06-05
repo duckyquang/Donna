@@ -73,10 +73,10 @@ export default function Onboarding() {
   };
 
   return (
-    <div className="flex h-full w-full items-center justify-center bg-[#0b0b0f] p-6">
-      <div className="w-full max-w-xl rounded-2xl border border-white/10 bg-[#15151c] p-8">
+    <div className="flex h-full w-full items-center justify-center bg-donna-bg p-6">
+      <div className="w-full max-w-xl rounded-2xl border border-white/10 bg-donna-surface p-8">
         <div className="mb-6 flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#7c5cff] text-lg font-bold">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-donna-accent text-lg font-bold text-white">
             D
           </div>
           <div>
@@ -97,20 +97,20 @@ export default function Onboarding() {
                   onClick={() => setProvider(p.id)}
                   className={`flex w-full items-center gap-3 rounded-xl border p-4 text-left transition-colors ${
                     selected
-                      ? "border-[#7c5cff] bg-[#7c5cff]/10"
+                      ? "border-donna-accent bg-donna-accent/10"
                       : "border-white/10 hover:bg-white/5"
                   }`}
                 >
                   {p.kind === "local" ? (
-                    <Cpu size={20} className="text-[#7c5cff]" />
+                    <Cpu size={20} className="text-donna-accent" />
                   ) : (
-                    <KeyRound size={20} className="text-[#7c5cff]" />
+                    <KeyRound size={20} className="text-donna-accent" />
                   )}
                   <div className="flex-1">
                     <div className="text-sm font-medium text-white">{p.label}</div>
                     <div className="text-xs text-gray-400">{p.description}</div>
                   </div>
-                  {selected && <Check size={18} className="text-[#7c5cff]" />}
+                  {selected && <Check size={18} className="text-donna-accent" />}
                 </button>
               );
             })}
@@ -128,7 +128,7 @@ export default function Onboarding() {
                 <input
                   value={ollamaHost}
                   onChange={(e) => setOllamaHost(e.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-[#0b0b0f] px-3 py-2 text-sm text-white outline-none focus:border-[#7c5cff]"
+                  className="w-full rounded-lg border border-white/10 bg-donna-bg px-3 py-2 text-sm text-white outline-none focus:border-donna-accent"
                   placeholder={DEFAULT_OLLAMA_HOST}
                 />
                 <span className="mt-1 block text-xs text-gray-500">
@@ -144,7 +144,7 @@ export default function Onboarding() {
                   type="password"
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-[#0b0b0f] px-3 py-2 text-sm text-white outline-none focus:border-[#7c5cff]"
+                  className="w-full rounded-lg border border-white/10 bg-donna-bg px-3 py-2 text-sm text-white outline-none focus:border-donna-accent"
                   placeholder="Paste your API key"
                 />
                 <span className="mt-1 block text-xs text-gray-500">
@@ -164,7 +164,7 @@ export default function Onboarding() {
                 <select
                   value={model}
                   onChange={(e) => setModel(e.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-[#0b0b0f] px-3 py-2 text-sm text-white outline-none focus:border-[#7c5cff]"
+                  className="w-full rounded-lg border border-white/10 bg-donna-bg px-3 py-2 text-sm text-white outline-none focus:border-donna-accent"
                 >
                   {models.map((m) => (
                     <option key={m} value={m}>

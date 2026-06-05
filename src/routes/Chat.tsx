@@ -102,7 +102,7 @@ export default function Chat() {
   return (
     <div className="flex h-full">
       {/* Conversation list */}
-      <div className="flex w-64 flex-col border-r border-white/10 bg-[#101017]">
+      <div className="flex w-64 flex-col border-r border-white/10 bg-donna-panel">
         <div className="flex items-center justify-between p-3">
           <span className="text-xs font-medium uppercase tracking-wide text-gray-500">
             Conversations
@@ -124,7 +124,7 @@ export default function Chat() {
               key={c.id}
               className={`group mb-1 flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${
                 activeId === c.id
-                  ? "bg-white/10 text-white"
+                  ? "bg-donna-accent/15 text-donna-accent-light"
                   : "text-gray-400 hover:bg-white/5"
               }`}
             >
@@ -189,12 +189,12 @@ export default function Chat() {
               }}
               rows={1}
               placeholder="Message Donna…"
-              className="max-h-40 flex-1 resize-none rounded-xl border border-white/10 bg-[#0b0b0f] px-4 py-3 text-sm text-white outline-none focus:border-[#7c5cff]"
+              className="max-h-40 flex-1 resize-none rounded-xl border border-white/10 bg-donna-bg px-4 py-3 text-sm text-white outline-none focus:border-donna-accent"
             />
             <button
               onClick={handleSend}
               disabled={streaming || !input.trim()}
-              className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#7c5cff] text-white transition-colors hover:bg-[#6b4ce6] disabled:opacity-40"
+              className="flex h-11 w-11 items-center justify-center rounded-xl bg-donna-accent text-white transition-colors hover:bg-donna-accent-hover disabled:opacity-40"
             >
               {streaming ? <Spinner /> : <Send size={18} />}
             </button>
@@ -220,8 +220,8 @@ function Bubble({
       <div
         className={`max-w-[80%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm ${
           isUser
-            ? "bg-[#7c5cff] text-white"
-            : "border border-white/10 bg-[#15151c] text-gray-100"
+            ? "bg-donna-accent text-white"
+            : "border border-white/10 bg-donna-surface text-gray-100"
         } ${pending ? "opacity-90" : ""}`}
       >
         {content}

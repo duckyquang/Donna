@@ -6,10 +6,14 @@ export default {
     extend: {
       colors: {
         donna: {
-          bg: "#0b0b0f",
-          surface: "#15151c",
+          bg: "#090909",
+          panel: "#0f0d0b",
+          surface: "#161311",
+          "surface-raised": "#1e1a16",
           border: "#26263040",
-          accent: "#7c5cff",
+          accent: "#c9742a",
+          "accent-hover": "#a8611f",
+          "accent-light": "#e8a55a",
           muted: "#9ca3af",
         },
       },

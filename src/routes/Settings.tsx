@@ -96,7 +96,7 @@ export default function Settings() {
                 onClick={() => setProvider(p.id)}
                 className={`rounded-xl border p-3 text-left transition-colors ${
                   provider === p.id
-                    ? "border-[#7c5cff] bg-[#7c5cff]/10"
+                    ? "border-donna-accent bg-donna-accent/10"
                     : "border-white/10 hover:bg-white/5"
                 }`}
               >
@@ -116,14 +116,14 @@ export default function Settings() {
               <input
                 value={ollamaHost}
                 onChange={(e) => setOllamaHost(e.target.value)}
-                className="w-full rounded-lg border border-white/10 bg-[#0b0b0f] px-3 py-2 text-sm text-white outline-none focus:border-[#7c5cff]"
+                className="w-full rounded-lg border border-white/10 bg-donna-bg px-3 py-2 text-sm text-white outline-none focus:border-donna-accent"
               />
             </label>
           ) : (
             <div className="space-y-1">
               <span className="block text-sm text-gray-300">{meta.label} API key</span>
               {hasKey ? (
-                <div className="flex items-center justify-between rounded-lg border border-white/10 bg-[#0b0b0f] px-3 py-2">
+                <div className="flex items-center justify-between rounded-lg border border-white/10 bg-donna-bg px-3 py-2">
                   <span className="text-sm text-green-400">
                     Key stored in keychain ✓
                   </span>
@@ -137,7 +137,7 @@ export default function Settings() {
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
                   placeholder="Paste your API key"
-                  className="w-full rounded-lg border border-white/10 bg-[#0b0b0f] px-3 py-2 text-sm text-white outline-none focus:border-[#7c5cff]"
+                  className="w-full rounded-lg border border-white/10 bg-donna-bg px-3 py-2 text-sm text-white outline-none focus:border-donna-accent"
                 />
               )}
               <span className="block text-xs text-gray-500">
@@ -157,7 +157,7 @@ export default function Settings() {
               <select
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
-                className="w-full rounded-lg border border-white/10 bg-[#0b0b0f] px-3 py-2 text-sm text-white outline-none focus:border-[#7c5cff]"
+                className="w-full rounded-lg border border-white/10 bg-donna-bg px-3 py-2 text-sm text-white outline-none focus:border-donna-accent"
               >
                 {models.map((m) => (
                   <option key={m} value={m}>

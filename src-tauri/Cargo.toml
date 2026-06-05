@@ -1,0 +1,25 @@
+[package]
+name = "donna"
+version = "0.0.0"
+description = "Open-source, local-first AI personal assistant."
+authors = ["Donna contributors"]
+license = "MIT"
+repository = "https://github.com/duckyquang/Donna"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "donna_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-notification = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]

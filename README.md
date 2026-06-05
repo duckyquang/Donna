@@ -1,0 +1,208 @@
+<div align="center">
+
+# Donna
+
+### Your own AI personal assistant — private, local, and proactive.
+
+Donna learns about *you*, connects to *your* tools, and gets work done the way you would.
+She runs on your machine. Your data stays yours.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
+[![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri-24C8DB.svg)](https://tauri.app/)
+[![Local models via Ollama](https://img.shields.io/badge/Local%20models-Ollama-000000.svg)](https://ollama.com/)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#-contributing)
+
+[Quick start](#-quick-start-for-everyone) ·
+[Features](#-features) ·
+[Models](#-bring-your-own-intelligence) ·
+[Integrations](#-integrations) ·
+[Privacy](#-your-data-stays-yours) ·
+[For developers](#-for-developers)
+
+</div>
+
+---
+
+## Why Donna?
+
+Most AI tools forget you the moment you close the tab. Donna doesn't.
+
+She remembers your people, your projects, and your preferences. She connects to your
+email, calendar, and meetings. And she works *proactively* — drafting, reminding, and
+summarizing before you ask — all from an app running on your own computer.
+
+- **It's yours.** Runs locally. No subscription. No data sold.
+- **It learns you.** A personal memory that gets sharper every conversation.
+- **It's proactive.** Reminders, briefings, and drafts pushed to you automatically.
+- **It's affordable.** Use free local models *or* bring your own API key for frontier models.
+- **It's for everyone.** Install the app, click "Connect," done. No code required.
+
+> Inspired by the magic of [Town](https://www.town.com/) and [Cobblr](https://cobblr.ai/) —
+> rebuilt as an open-source, local-first assistant that anyone can run and own.
+
+---
+
+## Features
+
+| | Feature | What it does |
+| --- | --- | --- |
+| 💬 | **Chat** | Talk to Donna, brainstorm, and teach her facts and routines about your life and work. |
+| 🔔 | **Notifications** | Proactive, native reminders for what you need to do, check, or follow up on. |
+| 📄 | **Docs** | Auto-creates documents — e.g. a recap when a meeting ends, or a note when something important arrives. |
+| 📅 | **Calendar** | A personal calendar with two-way Google Calendar sync. |
+| 🔌 | **Integrations** | One-click connections to Google Workspace, Slack, WhatsApp, Fathom, and more. |
+| 🧠 | **Memory** | A private knowledge graph of people, projects, and preferences — fully visible and editable. |
+
+---
+
+## Quick start (for everyone)
+
+No coding required. Three steps.
+
+### 1. Install Donna
+Download the installer for your operating system from the
+[Releases page](https://github.com/duckyquang/Donna/releases) and open it.
+
+> _Note: packaged installers arrive as development progresses. Until then, see
+> [For developers](#-for-developers) to run Donna from source._
+
+### 2. Choose your AI brain
+On first launch, the onboarding wizard asks how you want Donna to think:
+
+- **Free & private (recommended to start):** Install [Ollama](https://ollama.com/), then
+  let Donna download a local model like **Qwen**, **Llama**, or **Gemma** with one click.
+  Nothing leaves your computer.
+- **Frontier quality:** Paste your own API key for **OpenAI**, **Anthropic**, or
+  **Google**. Your key is stored securely in your system keychain.
+
+You can switch any time in **Settings**.
+
+### 3. Connect your tools
+Open **Integrations** and click to connect Google, Slack, WhatsApp, or Fathom. Donna
+guides you through a secure sign-in — no config files to edit.
+
+That's it. Say hi to Donna in the **Chat** tab. 👋
+
+---
+
+## Bring your own intelligence
+
+Donna runs on whatever brain you choose, behind one simple model layer.
+
+| Type | Provider | Cost | Privacy |
+| --- | --- | --- | --- |
+| 🖥️ Local | **Ollama** — Qwen, Llama, Gemma, and more | Free | Fully on-device |
+| ☁️ Cloud | **OpenAI** (GPT) | Your API usage | Sent to provider |
+| ☁️ Cloud | **Anthropic** (Claude) | Your API usage | Sent to provider |
+| ☁️ Cloud | **Google** (Gemini) | Your API usage | Sent to provider |
+
+No money for API keys? Run entirely free and private with a local model. Want top
+quality? Plug in your own key. Your choice, switchable anytime.
+
+---
+
+## Integrations
+
+| Service | What Donna can do | Status |
+| --- | --- | --- |
+| Gmail | Read, search, draft, organize email | Planned |
+| Google Calendar | View, create, and edit events | Planned |
+| Google Docs / Drive | Create and update docs and files | Planned |
+| Slack | Read channels and send messages | Planned |
+| WhatsApp | Message Donna (inbound) | Planned |
+| Fathom | Turn meeting recordings into docs | Planned |
+| Notion, Telegram, GitHub, Linear… | More connectors | On the roadmap |
+
+See [`CONTEXT.md`](CONTEXT.md) for the full integration and auth design.
+
+---
+
+## Your data stays yours
+
+- **Local-first.** Chats, memory, and docs are stored on your device in a local database.
+- **No telemetry.** Donna doesn't phone home by default.
+- **Secrets stay secret.** API keys and login tokens live in your OS keychain — never in
+  plaintext, never committed to the repo.
+- **You're in control.** Every memory and every proactive action is visible and
+  reversible. When data needs to leave your device (cloud model or integration), Donna
+  tells you.
+
+---
+
+## For developers
+
+Donna is built with **Tauri 2** (Rust core) + **React + TypeScript + Vite + Tailwind**.
+
+### Prerequisites
+- [Node.js](https://nodejs.org/) 18+ and npm
+- [Rust](https://www.rust-lang.org/tools/install) (stable) + Cargo
+- Platform Tauri prerequisites — see the [Tauri guide](https://tauri.app/start/prerequisites/)
+- (Optional) [Ollama](https://ollama.com/) for local models
+
+### Run from source
+```bash
+# 1. Clone
+git clone https://github.com/duckyquang/Donna.git
+cd Donna
+
+# 2. Install frontend dependencies
+npm install
+
+# 3. Run the app in development
+npm run tauri dev
+```
+
+### Build a production installer
+```bash
+npm run tauri build
+```
+
+### Project layout
+```
+donna/
+├── src/          # React + TypeScript frontend (the UI)
+├── src-tauri/    # Rust core (commands, scheduler, storage)
+├── docs/         # Roadmap and design notes
+├── CONTEXT.md    # Project source of truth — read this first
+└── README.md     # You are here
+```
+
+Read [`CONTEXT.md`](CONTEXT.md) for the architecture, model layer, memory design, and
+the full roadmap.
+
+---
+
+## Roadmap
+
+- **Phase 0 — Foundation:** scaffold, docs, build tooling ✅
+- **Phase 1 — MVP:** onboarding wizard, working chat, local persistence, settings
+- **Phase 2 — Integrations:** Google Workspace, calendar sync, Slack, Fathom
+- **Phase 3 — Proactive:** background scheduler, notifications, auto-docs, routines
+- **Phase 4 — Learning:** richer memory, voice calibration, natural-language routines
+
+Full details in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+
+---
+
+## Contributing
+
+Contributions are welcome and appreciated. ❤️
+
+1. Fork the repo and create a feature branch.
+2. Read [`CONTEXT.md`](CONTEXT.md) to understand the architecture and principles.
+3. Make your change, keeping end-user flows UI-only and secrets out of the codebase.
+4. Open a pull request with a clear description.
+
+Found a bug or have an idea? [Open an issue](https://github.com/duckyquang/Donna/issues).
+
+---
+
+## License
+
+[MIT](LICENSE) — free to use, modify, and distribute.
+
+<div align="center">
+
+**Donna** — the assistant that's actually yours.
+
+</div>

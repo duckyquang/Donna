@@ -18,7 +18,12 @@ import { NodeDetailPanel } from "../components/mindmap/NodeDetailPanel";
 import { NodeEditor } from "../components/mindmap/NodeEditor";
 import { api, type KgGraph, type KgEdge, type KgNode } from "../lib/api";
 import { useConfig } from "../lib/useConfig";
-import { ForceSim, connectionCount, forceLayout } from "../lib/mindmap/forceLayout";
+import {
+  ForceSim,
+  connectionCount,
+  forceLayout,
+  type LayoutNode,
+} from "../lib/mindmap/forceLayout";
 import { resolveGraphEdges } from "../lib/mindmap/resolveEdges";
 import { Spinner } from "../components/ui";
 
@@ -57,6 +62,18 @@ function nodeSize(node: KgNode, edges: KgEdge[]): number {
 function nodeDimensions(d: KgCircleNodeData) {
   const s = d.isFolder ? Math.max(d.size, 22) : d.size;
   return { w: s, h: s };
+}
+
+function layoutNodesFor(graph: KgGraph, edges: KgEdge[]): LayoutNode[] {
+  return graph.nodes.map((n) => {
+    const size = nodeSize(n, edges);
+    const glowPad = 8;
+    return {
+      id: n.id,
+      group: topCategory(n.folder[0] ?? n.group ?? "Topics"),
+      radius: size / 2 + glowPad,
+    };
+  });
 }
 
 function centerToPosition(cx: number, cy: number, w: number, h: number) {
@@ -164,12 +181,9 @@ export default function MindMap() {
       simRef.current = null;
       return;
     }
-    const layout = forceLayout(graph.nodes, resolvedEdges);
-    simRef.current = ForceSim.fromLayout(
-      graph.nodes.map((n) => n.id),
-      resolvedEdges,
-      layout
-    );
+    const layoutMeta = layoutNodesFor(graph, resolvedEdges);
+    const layout = forceLayout(layoutMeta, resolvedEdges);
+    simRef.current = ForceSim.fromLayout(layoutMeta, resolvedEdges, layout);
     setRfNodes(buildFlowNodes(graph, resolvedEdges, layout));
   }, [graph, resolvedEdges, setRfNodes]);
 

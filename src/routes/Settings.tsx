@@ -52,7 +52,13 @@ export default function Settings() {
         setStatus("API key saved to your keychain.");
       }
       if (isLocal) {
-        await api.saveConfig({ provider, model, ollamaHost, onboarded: true });
+        await api.saveConfig({
+          provider,
+          model,
+          ollamaHost,
+          onboarded: true,
+          profileOnboarded: config?.profileOnboarded ?? false,
+        });
       }
       const list = await api.listModels(provider);
       setModels(list);
@@ -73,7 +79,13 @@ export default function Settings() {
   const handleSave = async () => {
     setError(null);
     try {
-      await save({ provider, model, ollamaHost, onboarded: true });
+      await save({
+        provider,
+        model,
+        ollamaHost,
+        onboarded: true,
+        profileOnboarded: config?.profileOnboarded ?? false,
+      });
       await refresh();
       setStatus("Settings saved.");
     } catch (e) {

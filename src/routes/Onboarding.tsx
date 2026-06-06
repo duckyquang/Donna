@@ -40,6 +40,7 @@ export default function Onboarding() {
           model: "",
           ollamaHost,
           onboarded: false,
+          profileOnboarded: false,
         });
       }
       const list = await api.listModels(provider);
@@ -64,7 +65,7 @@ export default function Onboarding() {
     }
     setFinishing(true);
     try {
-      await save({ provider, model, ollamaHost, onboarded: true });
+      await save({ provider, model, ollamaHost, onboarded: true, profileOnboarded: false });
       navigate("/chat", { replace: true });
     } catch (e) {
       setError(String(e));

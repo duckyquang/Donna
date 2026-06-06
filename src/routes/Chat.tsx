@@ -5,11 +5,12 @@ import { useConfig } from "../lib/useConfig";
 import { Spinner, ThinkingDots } from "../components/ui";
 import { DonnaMessage } from "../components/DonnaMessage";
 import { hasDonnaQuestions } from "../lib/donnaQuestions";
+import ProfileOnboarding from "./ProfileOnboarding";
 
 const PLACEHOLDER_TITLE = "New conversation";
 
 export default function Chat() {
-  const { config } = useConfig();
+  const { config, save } = useConfig();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -17,6 +18,7 @@ export default function Chat() {
   const [streamingText, setStreamingText] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [needsProfile, setNeedsProfile] = useState<boolean | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const refreshConversations = async () => {
@@ -30,13 +32,23 @@ export default function Chat() {
   };
 
   useEffect(() => {
-    refreshConversations().then((list) => {
-      if (list.length > 0) {
+    if (!config) return;
+    refreshConversations().then(async (list) => {
+      if (list.length > 0 && !config.profileOnboarded) {
+        await save({ ...config, profileOnboarded: true });
+        setNeedsProfile(false);
         setActiveId(list[0].id);
-        loadMessages(list[0].id);
+        await loadMessages(list[0].id);
+        return;
+      }
+      const showProfile = !config.profileOnboarded && list.length === 0;
+      setNeedsProfile(showProfile);
+      if (!showProfile && list.length > 0) {
+        setActiveId(list[0].id);
+        await loadMessages(list[0].id);
       }
     });
-  }, []);
+  }, [config, save]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -117,6 +129,25 @@ export default function Chat() {
   const handleQuestionAnswer = (answer: string) => {
     sendMessage(answer);
   };
+
+  const handleProfileComplete = async (conversationId: number) => {
+    setNeedsProfile(false);
+    await refreshConversations();
+    setActiveId(conversationId);
+    await loadMessages(conversationId);
+  };
+
+  if (needsProfile === null) {
+    return (
+      <div className="flex h-full items-center justify-center text-gray-400">
+        <Spinner />
+      </div>
+    );
+  }
+
+  if (needsProfile) {
+    return <ProfileOnboarding onComplete={handleProfileComplete} />;
+  }
 
   return (
     <div className="flex h-full">

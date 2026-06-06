@@ -575,6 +575,38 @@ const BASIC_FIELDS: &[BasicField] = &[
     },
 ];
 
+const BASIC_FIELD_IDS: &[&str] = &[
+    "preferred_name",
+    "age",
+    "nationality",
+    "birthday",
+    "location",
+    "work_or_study",
+];
+
+#[derive(Debug, Serialize)]
+pub struct BasicFieldStatus {
+    pub id: String,
+    pub label: String,
+    pub prompt_hint: String,
+    pub known: bool,
+}
+
+/// Structured basics status for the first-conversation profile onboarding UI.
+pub fn basics_status() -> Result<Vec<BasicFieldStatus>> {
+    let nodes = graph()?.nodes;
+    Ok(BASIC_FIELDS
+        .iter()
+        .enumerate()
+        .map(|(i, field)| BasicFieldStatus {
+            id: BASIC_FIELD_IDS[i].into(),
+            label: field.label.into(),
+            prompt_hint: field.prompt_hint.into(),
+            known: (field.check)(&nodes),
+        })
+        .collect())
+}
+
 /// Human-readable checklist of core identity facts Donna has vs still needs to ask about.
 pub fn basics_checklist_for_prompt() -> Result<String> {
     let nodes = graph()?.nodes;

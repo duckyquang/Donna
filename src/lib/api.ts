@@ -12,6 +12,14 @@ export interface AppConfig {
   model: string;
   ollamaHost: string;
   onboarded: boolean;
+  profileOnboarded: boolean;
+}
+
+export interface BasicFieldStatus {
+  id: string;
+  label: string;
+  promptHint: string;
+  known: boolean;
 }
 
 export interface Conversation {
@@ -135,6 +143,13 @@ interface RawConfig {
   model: string;
   ollama_host: string;
   onboarded: boolean;
+  profile_onboarded: boolean;
+}
+interface RawBasicFieldStatus {
+  id: string;
+  label: string;
+  prompt_hint: string;
+  known: boolean;
 }
 interface RawConversation {
   id: number;
@@ -157,6 +172,7 @@ export const api = {
       model: c.model,
       ollamaHost: c.ollama_host,
       onboarded: c.onboarded,
+      profileOnboarded: c.profile_onboarded ?? false,
     };
   },
 
@@ -167,8 +183,19 @@ export const api = {
         model: config.model,
         ollama_host: config.ollamaHost,
         onboarded: config.onboarded,
+        profile_onboarded: config.profileOnboarded,
       },
     });
+  },
+
+  async basicsStatus(): Promise<BasicFieldStatus[]> {
+    const rows = await invoke<RawBasicFieldStatus[]>("basics_status");
+    return rows.map((r) => ({
+      id: r.id,
+      label: r.label,
+      promptHint: r.prompt_hint,
+      known: r.known,
+    }));
   },
 
   setApiKey(provider: ProviderId, key: string): Promise<void> {

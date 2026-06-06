@@ -79,6 +79,12 @@ acting on the user's behalf.
 — `**bold**` becomes **bold**, lists, headings, inline `code`, code blocks, and links all
 render properly (including while the response is still streaming).
 
+**First-conversation profile onboarding**: after the model-setup wizard, the user's first
+visit to Chat runs a short guided flow (name, age, nationality, birthday, location,
+work/study) before any free-form conversation. Answers are saved directly into
+`knowledge-base/` and a "Getting started" conversation is created with Donna's welcome
+message. Skipped only when `profile_onboarded` is set or the user already has conversations.
+
 **Knowledge audit**: every reply, Donna contrasts what she already knows (from the
 `knowledge-base/` folder tree, injected into her system prompt) with what she does not.
 She prioritizes questions in strict order — basics first (name, work/study, timezone),

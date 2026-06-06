@@ -95,6 +95,8 @@ pub struct AppConfig {
     pub model: String,
     pub ollama_host: String,
     pub onboarded: bool,
+    /// User finished the first-conversation profile basics wizard.
+    pub profile_onboarded: bool,
 }
 
 fn load_config(db: &Db) -> Result<AppConfig> {
@@ -105,12 +107,18 @@ fn load_config(db: &Db) -> Result<AppConfig> {
             .get_setting("ollama_host")?
             .unwrap_or_else(|| providers::DEFAULT_OLLAMA_HOST.into()),
         onboarded: db.get_setting("onboarded")?.as_deref() == Some("true"),
+        profile_onboarded: db.get_setting("profile_onboarded")?.as_deref() == Some("true"),
     })
 }
 
 #[tauri::command]
 pub fn get_config(db: State<Db>) -> Result<AppConfig> {
     load_config(&db)
+}
+
+#[tauri::command]
+pub fn basics_status() -> Result<Vec<knowledge::BasicFieldStatus>> {
+    knowledge::basics_status()
 }
 
 fn spawn_ollama_warmup(host: String, model: String) {
@@ -128,6 +136,14 @@ pub fn save_config(db: State<Db>, config: AppConfig) -> Result<()> {
     db.set_setting("model", &config.model)?;
     db.set_setting("ollama_host", &config.ollama_host)?;
     db.set_setting("onboarded", if config.onboarded { "true" } else { "false" })?;
+    db.set_setting(
+        "profile_onboarded",
+        if config.profile_onboarded {
+            "true"
+        } else {
+            "false"
+        },
+    )?;
     if config.provider == "ollama" {
         spawn_ollama_warmup(config.ollama_host, config.model);
     }

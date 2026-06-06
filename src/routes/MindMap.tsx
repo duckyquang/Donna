@@ -49,18 +49,13 @@ function colorFor(group: string): string {
 function nodeSize(node: KgNode, edges: KgEdge[]): number {
   const links = connectionCount(node.id, edges);
   if (node.type === "folder") {
-    return 14 + Math.min(links, 12) * 1.4;
+    return 22 + Math.min(links, 12) * 1.5;
   }
   return 10 + Math.min(links, 10) * 1.8;
 }
 
 function nodeDimensions(d: KgCircleNodeData) {
-  if (d.isFolder) {
-    const w = Math.max(d.size * 1.6, 36);
-    const h = Math.max(d.size * 0.9, 22);
-    return { w, h };
-  }
-  const s = d.size;
+  const s = d.isFolder ? Math.max(d.size, 22) : d.size;
   return { w: s, h: s };
 }
 
@@ -77,8 +72,12 @@ function buildFlowNodes(
     const size = nodeSize(m, resolvedEdges);
     const isFolder = m.type === "folder";
     const pos = positions.get(m.id) ?? { x: 0, y: 0 };
-    const w = isFolder ? Math.max(size * 1.6, 36) : size;
-    const h = isFolder ? Math.max(size * 0.9, 22) : size;
+    const { w, h } = nodeDimensions({
+      label: m.label,
+      color: "",
+      size,
+      isFolder,
+    });
     return {
       id: m.id,
       type: "kgCircle",

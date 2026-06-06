@@ -12,18 +12,20 @@ function KgCircleNodeComponent({ data, selected }: NodeProps) {
   const d = data as KgCircleNodeData;
 
   if (d.isFolder) {
-    const w = Math.max(d.size * 1.6, 36);
-    const h = Math.max(d.size * 0.9, 22);
+    const s = Math.max(d.size, 22);
+    const glow = selected
+      ? `0 0 0 2px #fff, 0 0 14px ${d.color}cc, 0 0 28px ${d.color}88, 0 0 42px ${d.color}44`
+      : `0 0 10px ${d.color}aa, 0 0 22px ${d.color}66, 0 0 36px ${d.color}33`;
     return (
-      <div className="kg-node kg-node--folder" style={{ width: w, height: h }} title={d.label}>
+      <div className="kg-node kg-node--folder" style={{ width: s, height: s }} title={d.label}>
         <div
-          className={`kg-node-folder${selected ? " kg-node-folder--selected" : ""}`}
+          className={`kg-node-folder-circle${selected ? " kg-node-folder-circle--selected" : ""}`}
           style={{
-            width: w,
-            height: h,
-            borderColor: `${d.color}99`,
-            backgroundColor: `${d.color}22`,
-            boxShadow: selected ? `0 0 0 2px #fff, 0 0 12px ${d.color}66` : undefined,
+            width: s,
+            height: s,
+            borderColor: d.color,
+            backgroundColor: `${d.color}40`,
+            boxShadow: glow,
           }}
         />
         <span className="kg-node-label kg-node-label--folder">{d.label}</span>

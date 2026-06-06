@@ -176,18 +176,18 @@ body {
   font-weight: 500;
 }
 
-.mindmap .kg-node-folder {
-  border-radius: 6px;
-  border: 1.5px solid;
-  transition: box-shadow 0.15s ease, transform 0.15s ease;
+.mindmap .kg-node-folder-circle {
+  border-radius: 50%;
+  border: 2px solid;
+  transition: box-shadow 0.2s ease, transform 0.15s ease;
 }
 
-.mindmap .kg-node--folder:hover .kg-node-folder {
-  transform: scale(1.05);
+.mindmap .kg-node--folder:hover .kg-node-folder-circle {
+  transform: scale(1.12);
 }
 
-.mindmap .kg-node-folder--selected {
-  transform: scale(1.08);
+.mindmap .kg-node-folder-circle--selected {
+  transform: scale(1.18);
 }
 
 .mindmap .kg-node:hover .kg-node-label,

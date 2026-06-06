@@ -141,12 +141,13 @@ knowledge base, rendered as cartography.
 - **Folders are categories, files are nodes**: each top-level folder is a category; each
   file inside it preserves the content of one node. A node file is Markdown (Donna's
   description for later recall) and may carry an **image**.
-- **Sub-folders are branches**: nesting a folder inside a category creates a branch in
-  the map, so the hierarchy of folders *is* the shape of the mind map.
-- **Donna decides what to save**: after a conversation she judges whether anything is
-  worth remembering. She only stores durable, user-specific knowledge — and she chooses
-  the category/branch, writes the label, and writes the description she'll use to recall
-  it. If nothing qualifies, nothing is saved (no more "unknown data" nodes).
+- **Sub-folders are branches** (and sub-sub-folders go deeper): the on-disk folder tree
+  *is* the mind map. Folder nodes connect parent → child; file nodes hang off their
+  containing folder.
+- **Donna decides paths and what to save**: after a conversation she judges whether
+  anything is worth remembering, picks a nested folder path (e.g. `Work/Google`,
+  `About You/Nationality/Vietnam`), writes the label, and writes the description she'll
+  use to recall it. If nothing qualifies, nothing is saved.
 - **What gets captured**: information about the user and their life/work/study, their
   routines, explicit feedback they give Donna, important people/projects, and other
   durable facts.
@@ -263,18 +264,27 @@ table — so it is transparent, portable, and easy for the user to inspect or ba
 ```
 knowledge-base/            # gitignored; created on first run, never pushed
   About You/
-    prefers-morning-meetings.md
+    Nationality/
+      Vietnam/
+        favorite-food.md
+        favorite-city.md
+  Work/
+    Acme Inc/
+      current-role.md
+  Study/
+    MIT/
+      degree.md
   Routines/
-    Mornings/              # sub-folder = a branch in the mind map
+    Mornings/
       journals-before-work.md
-  Feedback/
-    keep-replies-short.md
   People/
     alex-manager.md
     alex-manager.png        # an optional image attached to the node
 ```
 
-- **Folder = category**, **sub-folder = branch**, **file = node**.
+- **Folder = category or branch** (nesting can go several levels deep), **file = node**.
+- Donna chooses the path: e.g. nationality-related facts under `About You/Nationality/…`,
+  each employer under `Work/Company Name/…`, each school under `Study/School Name/…`.
 - Each node is a Markdown file with simple frontmatter and Donna's description:
   ```
   ---
@@ -290,9 +300,10 @@ knowledge-base/            # gitignored; created on first run, never pushed
 **Donna curates it.** After each conversation she runs a curation pass: the model judges
 whether the conversation contains durable, user-specific knowledge (life/work/study,
 routines, feedback, important people/projects). It returns only what is worth keeping,
-each with a chosen category (and optional sub-category/branch), a label, a type, and a
-description for recall. Donna then writes/updates the corresponding files. If nothing
-qualifies, nothing is written.
+each with a chosen folder `path` (2–5 segments), a label, a type, and a description for
+recall. Donna reuses existing branches from the tree when facts fit; she creates new
+sub-folders to group related knowledge. She then writes/updates the corresponding files.
+If nothing qualifies, nothing is written.
 
 **Storage & privacy.** The `knowledge-base/` folder lives next to the app and is
 **gitignored**, so personal data is never pushed to GitHub. Anyone who clones the repo

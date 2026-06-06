@@ -398,14 +398,20 @@ pub struct GraphNode {
 }
 
 #[derive(Serialize)]
+pub struct GraphEdge {
+    pub source: String,
+    pub target: String,
+}
+
+#[derive(Serialize)]
 pub struct GraphResponse {
     pub nodes: Vec<GraphNode>,
-    pub edges: Vec<serde_json::Value>,
+    pub edges: Vec<GraphEdge>,
 }
 
 fn to_graph_node(n: knowledge::KbNode) -> GraphNode {
     GraphNode {
-        id: format!("{}/{}", n.folder.join("/"), n.id),
+        id: knowledge::content_node_id(&n.folder, &n.id),
         label: n.label,
         group: n.folder.join(" / "),
         note: n.note,
@@ -417,13 +423,36 @@ fn to_graph_node(n: knowledge::KbNode) -> GraphNode {
     }
 }
 
+fn to_folder_graph_node(path: &[String], name: &str) -> GraphNode {
+    GraphNode {
+        id: knowledge::folder_node_id(path),
+        label: name.to_string(),
+        group: path.join(" / "),
+        note: String::new(),
+        updated_at: String::new(),
+        folder: path.to_vec(),
+        file_id: String::new(),
+        node_type: "folder".into(),
+        has_image: false,
+    }
+}
+
 #[tauri::command]
 pub fn kg_graph() -> Result<GraphResponse> {
     let g = knowledge::graph()?;
-    Ok(GraphResponse {
-        nodes: g.nodes.into_iter().map(to_graph_node).collect(),
-        edges: vec![],
-    })
+    let mut nodes: Vec<GraphNode> = g
+        .folders
+        .iter()
+        .map(|f| to_folder_graph_node(&f.path, &f.name))
+        .collect();
+    nodes.extend(g.nodes.iter().map(|n| to_graph_node(n.clone())));
+
+    let edges = knowledge::hierarchy_edges(&g)
+        .into_iter()
+        .map(|(source, target)| GraphEdge { source, target })
+        .collect();
+
+    Ok(GraphResponse { nodes, edges })
 }
 
 #[tauri::command]
@@ -477,17 +506,26 @@ remembering long-term. Save ONLY things specifically about this user: facts abou
 life, work, or study; their routines; their stated preferences; explicit feedback they \
 give Donna; and important people or projects in their life. DO NOT save general world \
 knowledge, your own answers, or transient/trivial chit-chat. It is good and normal to \
-save nothing.\n\nAlways save core identity facts when the user shares them — preferred \
-name, age, nationality, birthday, location/timezone — under the \"About You\" category \
-with clear labels (e.g. \"Preferred Name\", \"Age\", \"Nationality\", \"Birthday\", \
-\"Location\"). Do not save vague meta like \"user prefers a nickname\" without the \
-actual name.\n\nFor each thing worth keeping, choose a category (a folder) and \
-optionally a sub-category (a branch), write a short label, classify the type \
-(info|routine|feedback|preference|person|project), and write a 1-2 sentence note in your \
-own words so you can recall and use it later. Reuse an existing category when it fits.\n\n\
-Return ONLY valid JSON (no prose, no code fences):\n{\"memories\":[{\"category\":\
-\"About You\",\"subcategory\":\"\",\"label\":\"Short label\",\"type\":\"info\",\"note\":\
-\"What to remember and why it matters.\"}]}\nIf nothing qualifies, return \
+save nothing.\n\n## Folder hierarchy (important)\nOrganize each memory with a \"path\" \
+array of 2–5 folder segments (deepest folder holds the node). Think like a mind map: \
+category → branch → sub-branch → … → node.\n\
+- Segment 1: top category — About You, Work, Study, People, Projects, Routines, Feedback\n\
+- Segment 2+: meaningful branches YOU invent — reuse existing branches from the tree below \
+when the fact belongs there; create new branches to group related facts\n\nExamples:\n\
+- Vietnamese, loves pho → path [\"About You\",\"Nationality\",\"Vietnam\"], label \
+\"Favorite food\", note …\n\
+- Favorite city HCMC → path [\"About You\",\"Nationality\",\"Vietnam\"], label \
+\"Favorite city\", note …\n\
+- Works at Google as engineer → path [\"Work\",\"Google\"], label \"Role\", note …\n\
+- MS at MIT → path [\"Study\",\"MIT\"], label \"Degree\", note …\n\
+- Manager Alex → path [\"People\",\"Work\",\"Alex\"], label \"Manager\", note …\n\n\
+Identity basics: use branches like About You/Identity (name, age, birthday), \
+About You/Nationality (country + culture/food/places), About You/Location (city, \
+timezone). Never save vague meta without the actual value.\n\nFor each memory: path \
+(array), label (short node title), type (info|routine|feedback|preference|person|project), \
+note (1-2 sentences in your words).\n\nReturn ONLY valid JSON (no prose, no code fences):\n\
+{\"memories\":[{\"path\":[\"About You\",\"Nationality\",\"Vietnam\"],\"label\":\
+\"Favorite food\",\"type\":\"preference\",\"note\":\"…\"}]}\nIf nothing qualifies, return \
 {\"memories\":[]}.";
 
 /// Ask Donna to decide what (if anything) from a conversation is worth remembering, then
@@ -510,11 +548,10 @@ pub async fn kg_extract(db: State<'_, Db>, conversation_id: i64) -> Result<usize
         return Ok(0);
     }
 
-    let categories = knowledge::categories()?.join(", ");
+    let tree = knowledge::tree_context_for_prompt()?;
     let user_content = format!(
-        "Existing categories: {}\n\nConversation:\n{}",
-        if categories.is_empty() { "(none yet)".into() } else { categories },
-        transcript
+        "Existing knowledge tree (reuse these branches when facts fit; extend with new \
+         sub-folders as needed):\n{tree}\n\nConversation:\n{transcript}"
     );
 
     let turns = vec![
@@ -549,23 +586,12 @@ pub async fn kg_extract(db: State<'_, Db>, conversation_id: i64) -> Result<usize
             if label.is_empty() {
                 continue;
             }
-            let category = mem
-                .get("category")
-                .and_then(|v| v.as_str())
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .unwrap_or("About You");
             let note = mem.get("note").and_then(|v| v.as_str()).unwrap_or("");
             let node_type = mem.get("type").and_then(|v| v.as_str()).unwrap_or("info");
 
-            let mut folder = vec![category.to_string()];
-            if let Some(sub) = mem
-                .get("subcategory")
-                .and_then(|v| v.as_str())
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-            {
-                folder.push(sub.to_string());
+            let folder = memory_folder_path(mem);
+            if folder.is_empty() {
+                continue;
             }
 
             knowledge::save_node(&folder, label, note, node_type, None, None)?;
@@ -574,6 +600,39 @@ pub async fn kg_extract(db: State<'_, Db>, conversation_id: i64) -> Result<usize
     }
 
     Ok(count)
+}
+
+/// Resolve a memory's folder path from `path` (preferred) or legacy category/subcategory.
+fn memory_folder_path(mem: &serde_json::Value) -> Vec<String> {
+    if let Some(parts) = mem.get("path").and_then(|v| v.as_array()) {
+        let path: Vec<String> = parts
+            .iter()
+            .filter_map(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect();
+        if !path.is_empty() {
+            return path;
+        }
+    }
+
+    let category = mem
+        .get("category")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("About You");
+    let mut folder = vec![category.to_string()];
+    if let Some(sub) = mem
+        .get("subcategory")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        folder.push(sub.to_string());
+    }
+    folder
 }
 
 /// Pull the first JSON object out of a possibly noisy model response.

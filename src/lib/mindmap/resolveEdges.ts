@@ -1,31 +1,40 @@
 import type { KgEdge, KgGraph } from "../api";
 
-function inferGroupEdges(graph: KgGraph): KgEdge[] {
-  const byGroup = new Map<string, string[]>();
-  for (const n of graph.nodes) {
-    const g = n.group || "Topics";
-    if (!byGroup.has(g)) byGroup.set(g, []);
-    byGroup.get(g)!.push(n.id);
-  }
-
-  const inferred: KgEdge[] = [];
-  for (const ids of byGroup.values()) {
-    if (ids.length < 2) continue;
-    const hub = ids[0];
-    for (let i = 1; i < ids.length; i++) {
-      inferred.push({ source: hub, target: ids[i]! });
-    }
-  }
-  return inferred;
+function folderId(path: string[]): string {
+  return `folder:${path.join("/")}`;
 }
 
-/**
- * Prefer stored edges that reference existing nodes. If none remain, link nodes
- * in the same group so the map still shows connections.
- */
+/** Client-side fallback when the API returns no edges (older data). */
+function inferHierarchyEdges(graph: KgGraph): KgEdge[] {
+  const ids = new Set(graph.nodes.map((n) => n.id));
+  const edges: KgEdge[] = [];
+  const seen = new Set<string>();
+
+  const add = (source: string, target: string) => {
+    const key = `${source}->${target}`;
+    if (source === target || seen.has(key) || !ids.has(source) || !ids.has(target)) return;
+    seen.add(key);
+    edges.push({ source, target });
+  };
+
+  for (const node of graph.nodes) {
+    if (node.type === "folder") {
+      if (node.folder.length > 1) {
+        const parent = folderId(node.folder.slice(0, -1));
+        add(parent, node.id);
+      }
+      continue;
+    }
+    add(folderId(node.folder), node.id);
+  }
+
+  return edges;
+}
+
+/** Use hierarchy edges from the API; fall back to inferring parent → child links. */
 export function resolveGraphEdges(graph: KgGraph): KgEdge[] {
   const ids = new Set(graph.nodes.map((n) => n.id));
   const stored = graph.edges.filter((e) => ids.has(e.source) && ids.has(e.target));
   if (stored.length > 0) return stored;
-  return inferGroupEdges(graph);
+  return inferHierarchyEdges(graph);
 }

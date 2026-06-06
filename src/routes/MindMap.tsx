@@ -32,20 +32,38 @@ const GROUP_COLORS: Record<string, string> = {
   Topics: "#facc15",
 };
 
+function topCategory(group: string): string {
+  return (group.split(" / ")[0] ?? group).trim();
+}
+
 function colorFor(group: string): string {
-  if (GROUP_COLORS[group]) return GROUP_COLORS[group];
+  const top = topCategory(group);
+  if (GROUP_COLORS[top]) return GROUP_COLORS[top];
   let hash = 0;
-  for (let i = 0; i < group.length; i++) hash = group.charCodeAt(i) + ((hash << 5) - hash);
+  for (let i = 0; i < top.length; i++) hash = top.charCodeAt(i) + ((hash << 5) - hash);
   return `hsl(${Math.abs(hash) % 360} 55% 55%)`;
 }
 
-function nodeSize(id: string, edges: KgEdge[]): number {
-  const links = connectionCount(id, edges);
+function nodeSize(node: KgNode, edges: KgEdge[]): number {
+  const links = connectionCount(node.id, edges);
+  if (node.type === "folder") {
+    return 14 + Math.min(links, 12) * 1.4;
+  }
   return 10 + Math.min(links, 10) * 1.8;
 }
 
-function centerToPosition(cx: number, cy: number, size: number) {
-  return { x: cx - size / 2, y: cy - size / 2 };
+function nodeDimensions(d: KgCircleNodeData) {
+  if (d.isFolder) {
+    const w = Math.max(d.size * 1.6, 36);
+    const h = Math.max(d.size * 0.9, 22);
+    return { w, h };
+  }
+  const s = d.size;
+  return { w: s, h: s };
+}
+
+function centerToPosition(cx: number, cy: number, w: number, h: number) {
+  return { x: cx - w / 2, y: cy - h / 2 };
 }
 
 function buildFlowNodes(
@@ -54,20 +72,24 @@ function buildFlowNodes(
   positions: Map<string, { x: number; y: number }>
 ): Node[] {
   return graph.nodes.map((m) => {
-    const size = nodeSize(m.id, resolvedEdges);
+    const size = nodeSize(m, resolvedEdges);
+    const isFolder = m.type === "folder";
     const pos = positions.get(m.id) ?? { x: 0, y: 0 };
+    const w = isFolder ? Math.max(size * 1.6, 36) : size;
+    const h = isFolder ? Math.max(size * 0.9, 22) : size;
     return {
       id: m.id,
       type: "kgCircle",
-      position: centerToPosition(pos.x, pos.y, size),
-      initialWidth: size,
-      initialHeight: size,
-      width: size,
-      height: size,
+      position: centerToPosition(pos.x, pos.y, w, h),
+      initialWidth: w,
+      initialHeight: h,
+      width: w,
+      height: h,
       data: {
         label: m.label,
-        color: colorFor(m.group || "Topics"),
+        color: colorFor(m.folder[0] ?? m.group ?? "Topics"),
         size,
+        isFolder,
       } satisfies KgCircleNodeData,
       draggable: true,
       selectable: true,
@@ -78,9 +100,9 @@ function buildFlowNodes(
 function applySimPositions(nodes: Node[], sim: ForceSim): Node[] {
   const positions = sim.positions();
   return nodes.map((n) => {
-    const size = (n.data as KgCircleNodeData).size;
+    const { w, h } = nodeDimensions(n.data as KgCircleNodeData);
     const pos = positions.get(n.id) ?? { x: 0, y: 0 };
-    return { ...n, position: centerToPosition(pos.x, pos.y, size) };
+    return { ...n, position: centerToPosition(pos.x, pos.y, w, h) };
   });
 }
 
@@ -167,9 +189,10 @@ export default function MindMap() {
     const sim = simRef.current;
     if (!sim) return;
 
-    const size = (node.data as KgCircleNodeData).size;
-    const cx = node.position.x + size / 2;
-    const cy = node.position.y + size / 2;
+    const w = node.width ?? (node.data as KgCircleNodeData).size;
+    const h = node.height ?? (node.data as KgCircleNodeData).size;
+    const cx = node.position.x + w / 2;
+    const cy = node.position.y + h / 2;
     for (let i = 0; i < 5; i++) {
       sim.tick({ id: node.id, x: cx, y: cy });
     }
@@ -181,9 +204,10 @@ export default function MindMap() {
     const sim = simRef.current;
     if (!sim) return;
 
-    const size = (node.data as KgCircleNodeData).size;
-    const cx = node.position.x + size / 2;
-    const cy = node.position.y + size / 2;
+    const w = node.width ?? (node.data as KgCircleNodeData).size;
+    const h = node.height ?? (node.data as KgCircleNodeData).size;
+    const cx = node.position.x + w / 2;
+    const cy = node.position.y + h / 2;
     for (let i = 0; i < 12; i++) {
       sim.tick({ id: node.id, x: cx, y: cy }, 0.6);
     }
@@ -212,9 +236,22 @@ export default function MindMap() {
   };
 
   const groupsPresent = useMemo(
-    () => [...new Set(graph.nodes.map((n) => n.group || "Topics"))].sort(),
+    () =>
+      [
+        ...new Set(
+          graph.nodes.map((n) => topCategory(n.folder[0] ?? n.group ?? "Topics"))
+        ),
+      ].sort(),
     [graph]
   );
+
+  const childNodes = useMemo(() => {
+    if (!selectedId) return [];
+    const childIds = new Set(
+      resolvedEdges.filter((e) => e.source === selectedId).map((e) => e.target)
+    );
+    return graph.nodes.filter((n) => childIds.has(n.id));
+  }, [selectedId, graph.nodes, resolvedEdges]);
 
   return (
     <div className="relative h-full w-full bg-donna-bg">
@@ -318,8 +355,17 @@ export default function MindMap() {
           {selectedNode && (
             <NodeDetailPanel
               node={selectedNode}
+              childNodes={childNodes}
               onClose={() => setSelectedId(null)}
-              onEdit={() => setEditing(selectedNode)}
+              onEdit={() => {
+                if (selectedNode.type !== "folder") setEditing(selectedNode);
+              }}
+              onSelectChild={(id) => {
+                setSelectedId(id);
+                setRfNodes((nds) =>
+                  nds.map((n) => ({ ...n, selected: n.id === id }))
+                );
+              }}
               onDeleted={() => {
                 setSelectedId(null);
                 load();

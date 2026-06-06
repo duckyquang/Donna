@@ -44,13 +44,22 @@ function detectedTimezone(): string {
   }
 }
 
+/** Pull an organization/school name from free-text for a sub-folder branch. */
+function branchFromDetail(detail: string): string {
+  const t = detail.trim();
+  if (!t) return "General";
+  const atMatch = t.match(/\bat\s+([^,;]+)/i);
+  if (atMatch) return atMatch[1]!.trim();
+  return t.split(/[,;]/)[0]!.trim().slice(0, 48);
+}
+
 async function saveProfileToKnowledge(answers: ProfileAnswers) {
   const saves: Promise<unknown>[] = [];
 
   if (answers.name.trim()) {
     saves.push(
       api.kgSaveNode({
-        folder: ["About You"],
+        folder: ["About You", "Identity"],
         label: "Preferred name",
         note: answers.name.trim(),
         type: "info",
@@ -61,7 +70,7 @@ async function saveProfileToKnowledge(answers: ProfileAnswers) {
   if (answers.age && answers.age !== "Prefer not to say") {
     saves.push(
       api.kgSaveNode({
-        folder: ["About You"],
+        folder: ["About You", "Identity"],
         label: "Age",
         note: answers.age,
         type: "info",
@@ -72,8 +81,8 @@ async function saveProfileToKnowledge(answers: ProfileAnswers) {
   if (answers.nationality.trim()) {
     saves.push(
       api.kgSaveNode({
-        folder: ["About You"],
-        label: "Nationality",
+        folder: ["About You", "Nationality"],
+        label: "Country",
         note: answers.nationality.trim(),
         type: "info",
       })
@@ -83,7 +92,7 @@ async function saveProfileToKnowledge(answers: ProfileAnswers) {
   if (answers.birthday) {
     saves.push(
       api.kgSaveNode({
-        folder: ["About You"],
+        folder: ["About You", "Identity"],
         label: "Birthday",
         note: answers.birthday,
         type: "info",
@@ -94,8 +103,8 @@ async function saveProfileToKnowledge(answers: ProfileAnswers) {
   if (answers.location.trim()) {
     saves.push(
       api.kgSaveNode({
-        folder: ["About You"],
-        label: "Location and timezone",
+        folder: ["About You", "Location"],
+        label: "City and timezone",
         note: answers.location.trim(),
         type: "info",
       })
@@ -107,7 +116,7 @@ async function saveProfileToKnowledge(answers: ProfileAnswers) {
     if (answers.workStudy === "work" || answers.workStudy === "both") {
       saves.push(
         api.kgSaveNode({
-          folder: ["Work"],
+          folder: ["Work", branchFromDetail(detail)],
           label: "Current role",
           note: detail,
           type: "info",
@@ -117,7 +126,7 @@ async function saveProfileToKnowledge(answers: ProfileAnswers) {
     if (answers.workStudy === "study" || answers.workStudy === "both") {
       saves.push(
         api.kgSaveNode({
-          folder: ["Study"],
+          folder: ["Study", branchFromDetail(detail)],
           label: "Program",
           note: detail,
           type: "info",

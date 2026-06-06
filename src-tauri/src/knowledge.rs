@@ -427,6 +427,75 @@ pub fn summary_for_prompt() -> Result<String> {
     Ok(lines.join("\n"))
 }
 
+/// Indented folder tree with node labels — helps the curator reuse branches.
+pub fn tree_context_for_prompt() -> Result<String> {
+    let g = graph()?;
+    if g.folders.is_empty() && g.nodes.is_empty() {
+        return Ok("(empty — no folders or nodes yet)".into());
+    }
+
+    let mut sorted = g.folders.clone();
+    sorted.sort_by(|a, b| a.path.cmp(&b.path));
+
+    let mut lines = Vec::new();
+    for folder in &sorted {
+        let depth = folder.path.len();
+        let indent = "  ".repeat(depth.saturating_sub(1));
+        let mut line = format!("{indent}{}/", folder.name);
+        let nodes_here: Vec<&str> = g
+            .nodes
+            .iter()
+            .filter(|n| n.folder == folder.path)
+            .map(|n| n.label.as_str())
+            .collect();
+        if !nodes_here.is_empty() {
+            line.push_str(&format!(" — {}", nodes_here.join(", ")));
+        }
+        lines.push(line);
+    }
+    Ok(lines.join("\n"))
+}
+
+/// Globally-unique id for a folder branch in the mind map.
+pub fn folder_node_id(path: &[String]) -> String {
+    format!("folder:{}", path.join("/"))
+}
+
+/// Globally-unique id for a content node file in the mind map.
+pub fn content_node_id(folder: &[String], file_id: &str) -> String {
+    format!("{}/{}", folder.join("/"), file_id)
+}
+
+/// Parent → child edges that mirror the on-disk folder hierarchy.
+pub fn hierarchy_edges(g: &KbGraph) -> Vec<(String, String)> {
+    use std::collections::HashSet;
+
+    let mut edges = Vec::new();
+    let mut seen = HashSet::new();
+
+    let mut add = |source: &str, target: &str| {
+        if source != target && seen.insert((source.to_string(), target.to_string())) {
+            edges.push((source.to_string(), target.to_string()));
+        }
+    };
+
+    for folder in &g.folders {
+        let child = folder_node_id(&folder.path);
+        if folder.path.len() > 1 {
+            let parent = folder_node_id(&folder.path[..folder.path.len() - 1]);
+            add(&parent, &child);
+        }
+    }
+
+    for node in &g.nodes {
+        let content = content_node_id(&node.folder, &node.id);
+        let container = folder_node_id(&node.folder);
+        add(&container, &content);
+    }
+
+    edges
+}
+
 /// Existing category names (top-level folders), for prompting and the UI.
 pub fn categories() -> Result<Vec<String>> {
     let g = graph()?;

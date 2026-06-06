@@ -45,9 +45,14 @@ for the full architecture and design rationale behind each item.
 - [x] Formatted chat output — render Donna's replies as Markdown (bold, lists, code,
       links), including while streaming
 - [x] Mind Map / Knowledge Cartography — node-based, clustered visualization of the
-      knowledge graph, continuously updated by Donna, with click-to-reveal notes per node
-- [ ] Editable nodes/notes directly from the Mind Map
-- [ ] Embedding-based retrieval over the knowledge graph
+      knowledge base, continuously updated by Donna, with click-to-open nodes
+- [x] Folder-based knowledge base — categories are folders, sub-folders are branches,
+      files are nodes (Markdown + optional image); gitignored, recreated per user
+- [x] Donna curates the knowledge base — she decides what's worth saving, the category,
+      the type, and the description (no more "unknown data" nodes)
+- [x] Editable nodes from the Mind Map — edit label/category/type/note, attach or remove
+      an image, add or delete nodes; changes write back to the files
+- [ ] Embedding-based retrieval over the knowledge base
 
 ## Ongoing
 - [ ] More integrations (Notion, Telegram, GitHub, Linear, …)

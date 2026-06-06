@@ -26,6 +26,11 @@ src-tauri/gen/
 *.db
 data/
 
+# Personal knowledge base — never push the user's private data.
+# The folder structure is recreated locally on first run.
+/knowledge-base/*
+!/knowledge-base/README.md
+
 # Logs
 *.log
 npm-debug.log*

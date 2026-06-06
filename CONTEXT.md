@@ -114,22 +114,26 @@ Roadmap: Notion, Telegram, GitHub, Linear, and more.
 A knowledge graph of everything Donna learns — facts, people, projects, preferences,
 routines. Visible and editable by the user (privacy + trust). See §6.
 
-### 4.7 Mind Map (Knowledge Cartography)
-A visual, node-based map of everything Donna knows about the user — the knowledge base
-rendered as cartography rather than a list.
-- **Node-based cartography**: each piece of knowledge (a person, project, preference,
-  routine, topic, …) is a node; relationships between them are edges.
-- **Grouped into chunks, not random**: nodes are clustered by category/theme (e.g.
-  *People*, *Projects*, *Preferences*, *Routines*, *Health*), each cluster visually
-  grouped and color-coded, so the map reads as organized regions rather than scattered
-  dots.
-- **Continuously updated by Donna**: after conversations (and later, integration events),
-  Donna extracts new knowledge and merges it into the map — adding/updating nodes and
-  edges over time. The map grows as she learns.
-- **Click a node for Donna's note**: selecting a node reveals a short, human-readable note
-  Donna wrote about that entity (what it is and why it matters), plus its connections.
+### 4.7 Mind Map (Folder-based Knowledge Base)
+A visual, node-based map backed by a real **folder system on disk** — the user's local
+knowledge base, rendered as cartography.
+- **Folders are categories, files are nodes**: each top-level folder is a category; each
+  file inside it preserves the content of one node. A node file is Markdown (Donna's
+  description for later recall) and may carry an **image**.
+- **Sub-folders are branches**: nesting a folder inside a category creates a branch in
+  the map, so the hierarchy of folders *is* the shape of the mind map.
+- **Donna decides what to save**: after a conversation she judges whether anything is
+  worth remembering. She only stores durable, user-specific knowledge — and she chooses
+  the category/branch, writes the label, and writes the description she'll use to recall
+  it. If nothing qualifies, nothing is saved (no more "unknown data" nodes).
+- **What gets captured**: information about the user and their life/work/study, their
+  routines, explicit feedback they give Donna, important people/projects, and other
+  durable facts.
+- **Click a node to read or edit**: selecting a file node shows Donna's note (and image);
+  the user can edit the label, description, type, and category, attach/remove an image,
+  or delete the node — changes are written straight back to the files.
 
-This is the visual front-end of the §9 knowledge graph.
+This is the visual front-end of the §9 knowledge base.
 
 ---
 
@@ -230,32 +234,52 @@ needs.
 
 ---
 
-## 9. Memory / Knowledge Graph
+## 9. Knowledge Base (folder system on disk)
 
-Donna builds a personal knowledge graph stored in SQLite:
-- **Entities**: people, projects, topics, organizations.
-- **Facts/preferences**: typed key-value statements linked to entities ("prefers
-  brevity", "deadline = 2026-07-01").
-- **Routines**: scheduled behaviors the user taught Donna.
-- **Provenance**: every memory records where it came from (chat, correction, integration)
-  and when, so the user can audit and edit it.
+Donna's knowledge base is a **directory tree on the local machine**, not a database
+table — so it is transparent, portable, and easy for the user to inspect or back up.
 
-Retrieval is hybrid: structured lookups for facts + embedding similarity for fuzzy
-recall. Memory is surfaced and editable in the Memory view to keep the user in control.
+```
+knowledge-base/            # gitignored; created on first run, never pushed
+  About You/
+    prefers-morning-meetings.md
+  Routines/
+    Mornings/              # sub-folder = a branch in the mind map
+      journals-before-work.md
+  Feedback/
+    keep-replies-short.md
+  People/
+    alex-manager.md
+    alex-manager.png        # an optional image attached to the node
+```
 
-**Visualized as a Mind Map (§4.7).** The graph is stored as nodes and edges in SQLite:
-- `kg_nodes(id, label, group, note, created_at, updated_at)` — `group` is the cluster
-  the node belongs to (People, Projects, Preferences, Routines, Topics, …), and `note`
-  is the short, human-readable explanation Donna writes and shows on click.
-- `kg_edges(id, source, target)` — relationships between nodes.
+- **Folder = category**, **sub-folder = branch**, **file = node**.
+- Each node is a Markdown file with simple frontmatter and Donna's description:
+  ```
+  ---
+  label: Prefers morning meetings
+  type: preference
+  image:
+  updated: 2026-06-06T08:00:00Z
+  ---
+  The user schedules deep work in the afternoon and prefers meetings before noon.
+  ```
+- A node may reference an **image** stored alongside it in the same folder.
 
-After each conversation, Donna runs a **knowledge-extraction** pass: she asks the model
-to return structured JSON of nodes (with a stable id, label, group, and note) and edges,
-then **upserts** them into the graph so the map updates continuously without duplicating
-existing knowledge. The Mind Map view lays nodes out by group into visual clusters.
+**Donna curates it.** After each conversation she runs a curation pass: the model judges
+whether the conversation contains durable, user-specific knowledge (life/work/study,
+routines, feedback, important people/projects). It returns only what is worth keeping,
+each with a chosen category (and optional sub-category/branch), a label, a type, and a
+description for recall. Donna then writes/updates the corresponding files. If nothing
+qualifies, nothing is written.
 
-A future **calibration** concept (inspired by Cobblr) can score how well Donna knows the
-user's voice and gate higher-autonomy actions behind higher confidence.
+**Storage & privacy.** The `knowledge-base/` folder lives next to the app and is
+**gitignored**, so personal data is never pushed to GitHub. Anyone who clones the repo
+gets the same structure created locally on first run, holding only their own data.
+
+The Mind Map view (§4.7) reads this folder tree and lets the user edit nodes; edits are
+written back to the files. A future **calibration** concept (inspired by Cobblr) can
+score how well Donna knows the user and gate higher-autonomy actions.
 
 ---
 

@@ -10,9 +10,10 @@ import {
   type OnNodeDrag,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { RefreshCw, Trash2, X } from "lucide-react";
+import { Plus, RefreshCw, Trash2 } from "lucide-react";
 import { KgCircleNode, type KgCircleNodeData } from "../components/mindmap/KgCircleNode";
 import { MindMapGraphLinks } from "../components/mindmap/MindMapGraphLinks";
+import { NodeEditor } from "../components/mindmap/NodeEditor";
 import { api, type KgGraph, type KgEdge, type KgNode } from "../lib/api";
 import { ForceSim, connectionCount, forceLayout } from "../lib/mindmap/forceLayout";
 import { resolveGraphEdges } from "../lib/mindmap/resolveEdges";
@@ -87,7 +88,7 @@ export default function MindMap() {
   const [loading, setLoading] = useState(true);
   const [resetting, setResetting] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [selected, setSelected] = useState<KgNode | null>(null);
+  const [editing, setEditing] = useState<KgNode | "new" | null>(null);
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
   const simRef = useRef<ForceSim | null>(null);
   const didDragRef = useRef(false);
@@ -115,7 +116,7 @@ export default function MindMap() {
     setResetting(true);
     try {
       await api.kgReset();
-      setSelected(null);
+      setEditing(null);
       setShowResetConfirm(false);
       setGraph({ nodes: [], edges: [] });
     } finally {
@@ -182,10 +183,10 @@ export default function MindMap() {
   const onNodeClick: NodeMouseHandler = (_e, node) => {
     if (didDragRef.current) return;
     const found = nodeById.get(node.id);
-    if (found) setSelected(found);
+    if (found) setEditing(found);
   };
 
-  const onPaneClick = () => setSelected(null);
+  const onPaneClick = () => setEditing(null);
 
   const groupsPresent = useMemo(
     () => [...new Set(graph.nodes.map((n) => n.group || "Topics"))].sort(),
@@ -203,6 +204,14 @@ export default function MindMap() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setEditing("new")}
+            className="flex items-center gap-2 rounded-lg bg-donna-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-donna-accent-hover"
+          >
+            <Plus size={14} />
+            Add node
+          </button>
           <button
             type="button"
             onClick={() => setShowResetConfirm(true)}
@@ -329,61 +338,15 @@ export default function MindMap() {
         </>
       )}
 
-      {selected && (
-        <>
-          <button
-            type="button"
-            aria-label="Close"
-            className="absolute inset-0 z-20 bg-black/55 backdrop-blur-[2px]"
-            onClick={() => setSelected(null)}
-          />
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="node-popup-title"
-            className="absolute left-1/2 top-1/2 z-30 w-full max-w-md -translate-x-1/2 -translate-y-1/2 px-4"
-          >
-            <div className="rounded-2xl border border-white/10 bg-donna-surface p-5 shadow-2xl">
-              <div className="mb-4 flex items-start gap-3">
-                <span
-                  className="mt-1 h-4 w-4 shrink-0 rounded-full"
-                  style={{ background: colorFor(selected.group) }}
-                />
-                <div className="min-w-0 flex-1">
-                  <h2
-                    id="node-popup-title"
-                    className="text-base font-semibold text-white"
-                  >
-                    {selected.label}
-                  </h2>
-                  <span
-                    className="mt-1 inline-block rounded-full px-2 py-0.5 text-[10px]"
-                    style={{
-                      background: `${colorFor(selected.group)}22`,
-                      color: colorFor(selected.group),
-                    }}
-                  >
-                    {selected.group}
-                  </span>
-                </div>
-                <button
-                  onClick={() => setSelected(null)}
-                  className="shrink-0 rounded-lg p-1 text-gray-500 hover:bg-white/5 hover:text-white"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-donna-bg px-4 py-3">
-                <p className="text-sm leading-relaxed text-gray-200">
-                  {selected.note || "No note yet."}
-                </p>
-              </div>
-              <p className="mt-3 text-[10px] text-gray-600">
-                Noted by Donna · updated {selected.updatedAt.slice(0, 10)}
-              </p>
-            </div>
-          </div>
-        </>
+      {editing !== null && (
+        <NodeEditor
+          node={editing === "new" ? null : editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            load();
+          }}
+        />
       )}
     </div>
   );

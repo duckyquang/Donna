@@ -39,6 +39,13 @@ export interface KgNode {
   group: string;
   note: string;
   updatedAt: string;
+  /** Folder path (category + branches) the node lives in. */
+  folder: string[];
+  /** File id (slug) within the folder. */
+  fileId: string;
+  /** info | routine | feedback | preference | person | project | … */
+  type: string;
+  hasImage: boolean;
 }
 
 export interface KgEdge {
@@ -57,6 +64,10 @@ interface RawKgNode {
   group: string;
   note: string;
   updated_at: string;
+  folder: string[];
+  file_id: string;
+  type: string;
+  has_image: boolean;
 }
 
 export interface IntegrationStatus {
@@ -228,19 +239,70 @@ export const api = {
         group: n.group,
         note: n.note,
         updatedAt: n.updated_at,
+        folder: n.folder,
+        fileId: n.file_id,
+        type: n.type,
+        hasImage: n.has_image,
       })),
       edges: g.edges,
     };
   },
 
-  /** Extract knowledge from a conversation into the graph. Returns nodes upserted. */
+  /** Ask Donna to curate durable knowledge from a conversation. Returns count saved. */
   kgExtract(conversationId: number): Promise<number> {
     return invoke("kg_extract", { conversationId });
   },
 
-  /** Wipe all knowledge-graph nodes and edges. */
+  /** Wipe the knowledge base and re-seed default categories. */
   kgReset(): Promise<void> {
     return invoke("kg_reset");
+  },
+
+  /** Create or edit a node. Pass fromFolder/fromId when editing/moving an existing one. */
+  async kgSaveNode(input: {
+    folder: string[];
+    label: string;
+    note: string;
+    type: string;
+    fromFolder?: string[];
+    fromId?: string;
+  }): Promise<KgNode> {
+    const n = await invoke<RawKgNode>("kg_save_node", {
+      folder: input.folder,
+      label: input.label,
+      note: input.note,
+      nodeType: input.type,
+      fromFolder: input.fromFolder ?? null,
+      fromId: input.fromId ?? null,
+    });
+    return {
+      id: n.id,
+      label: n.label,
+      group: n.group,
+      note: n.note,
+      updatedAt: n.updated_at,
+      folder: n.folder,
+      fileId: n.file_id,
+      type: n.type,
+      hasImage: n.has_image,
+    };
+  },
+
+  kgDeleteNode(folder: string[], id: string): Promise<void> {
+    return invoke("kg_delete_node", { folder, id });
+  },
+
+  /** Returns the node's image as a data URL, or null. */
+  kgNodeImage(folder: string[], id: string): Promise<string | null> {
+    return invoke("kg_node_image", { folder, id });
+  },
+
+  kgSetNodeImage(folder: string[], id: string, sourcePath: string): Promise<void> {
+    return invoke("kg_set_node_image", { folder, id, sourcePath });
+  },
+
+  kgRemoveNodeImage(folder: string[], id: string): Promise<void> {
+    return invoke("kg_remove_node_image", { folder, id });
   },
 
   // --- Integrations ---

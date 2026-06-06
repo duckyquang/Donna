@@ -6,6 +6,7 @@ mod commands;
 mod db;
 mod error;
 mod integrations;
+mod knowledge;
 mod oauth;
 mod providers;
 mod secrets;
@@ -16,7 +17,11 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            // Create the local knowledge-base folder tree on first run.
+            let _ = knowledge::ensure_root();
+
             // Store the database under the OS-appropriate app data directory.
             let dir = app
                 .path()
@@ -74,6 +79,11 @@ pub fn run() {
             commands::kg_graph,
             commands::kg_extract,
             commands::kg_reset,
+            commands::kg_save_node,
+            commands::kg_delete_node,
+            commands::kg_node_image,
+            commands::kg_set_node_image,
+            commands::kg_remove_node_image,
             commands::integrations_status,
             commands::google_set_client,
             commands::google_connect,

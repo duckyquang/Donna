@@ -7,9 +7,10 @@ use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 use tauri::State;
 
-use crate::db::{Conversation, Db, KgEdge, KgNode, Message};
+use crate::db::{Conversation, Db, Message};
 use crate::error::{Error, Result};
 use crate::integrations::{self, google, slack};
+use crate::knowledge;
 use crate::providers::{self, ChatTurn};
 use crate::secrets;
 
@@ -203,40 +204,121 @@ pub async fn send_chat(
     }
 }
 
-// --- Knowledge graph / Mind Map --------------------------------------------
+// --- Knowledge base / Mind Map ---------------------------------------------
+//
+// The knowledge base is a folder tree on disk (see `knowledge.rs`). The Mind Map UI
+// consumes a flat node list where each node's `group` is its folder path, so categories
+// and sub-folder branches render as clusters.
 
 #[derive(Serialize)]
-pub struct KgGraph {
-    pub nodes: Vec<KgNode>,
-    pub edges: Vec<KgEdge>,
+pub struct GraphNode {
+    /// Globally-unique id: folder path + file id.
+    pub id: String,
+    pub label: String,
+    /// Folder path joined with " / " — drives clustering/branching in the UI.
+    pub group: String,
+    pub note: String,
+    pub updated_at: String,
+    /// Raw folder path components, for editing/moving the node.
+    pub folder: Vec<String>,
+    /// File id (slug) within the folder.
+    pub file_id: String,
+    #[serde(rename = "type")]
+    pub node_type: String,
+    pub has_image: bool,
+}
+
+#[derive(Serialize)]
+pub struct GraphResponse {
+    pub nodes: Vec<GraphNode>,
+    pub edges: Vec<serde_json::Value>,
+}
+
+fn to_graph_node(n: knowledge::KbNode) -> GraphNode {
+    GraphNode {
+        id: format!("{}/{}", n.folder.join("/"), n.id),
+        label: n.label,
+        group: n.folder.join(" / "),
+        note: n.note,
+        updated_at: n.updated,
+        folder: n.folder,
+        file_id: n.id,
+        node_type: n.node_type,
+        has_image: n.has_image,
+    }
 }
 
 #[tauri::command]
-pub fn kg_graph(db: State<Db>) -> Result<KgGraph> {
-    Ok(KgGraph {
-        nodes: db.list_nodes()?,
-        edges: db.list_edges()?,
+pub fn kg_graph() -> Result<GraphResponse> {
+    let g = knowledge::graph()?;
+    Ok(GraphResponse {
+        nodes: g.nodes.into_iter().map(to_graph_node).collect(),
+        edges: vec![],
     })
 }
 
 #[tauri::command]
-pub fn kg_reset(db: State<Db>) -> Result<()> {
-    db.clear_kg()
+pub fn kg_reset() -> Result<()> {
+    knowledge::reset()
 }
 
-const EXTRACT_PROMPT: &str = "You are building a personal knowledge graph about the \
-user from the conversation below. Extract durable facts about the user: people, \
-projects, preferences, routines, places, health, and topics they care about. Ignore \
-trivia and one-off chit-chat.\n\nReturn ONLY valid JSON (no prose, no code fences) with \
-this exact shape:\n{\n  \"nodes\": [{\"id\": \"kebab-case-stable-id\", \"label\": \
-\"Short Name\", \"group\": \"People|Projects|Preferences|Routines|Places|Health|Topics\", \
-\"note\": \"one or two sentence note about why this matters to the user\"}],\n  \
-\"edges\": [{\"source\": \"node-id\", \"target\": \"node-id\"}]\n}\nReuse the exact ids of \
-existing nodes when referring to the same thing so they are updated, not duplicated. If \
-there is nothing worth saving, return {\"nodes\":[],\"edges\":[]}.";
+#[tauri::command]
+pub fn kg_save_node(
+    folder: Vec<String>,
+    label: String,
+    note: String,
+    node_type: String,
+    from_folder: Option<Vec<String>>,
+    from_id: Option<String>,
+) -> Result<GraphNode> {
+    let node = knowledge::save_node(
+        &folder,
+        &label,
+        &note,
+        &node_type,
+        from_folder.as_deref(),
+        from_id.as_deref(),
+    )?;
+    Ok(to_graph_node(node))
+}
 
-/// Extract knowledge from a conversation and merge it into the graph. Best-effort:
-/// returns the number of nodes upserted. Safe to call after each chat turn.
+#[tauri::command]
+pub fn kg_delete_node(folder: Vec<String>, id: String) -> Result<()> {
+    knowledge::delete_node(&folder, &id)
+}
+
+#[tauri::command]
+pub fn kg_node_image(folder: Vec<String>, id: String) -> Result<Option<String>> {
+    knowledge::node_image(&folder, &id)
+}
+
+#[tauri::command]
+pub fn kg_set_node_image(folder: Vec<String>, id: String, source_path: String) -> Result<()> {
+    knowledge::set_node_image(&folder, &id, &source_path)
+}
+
+#[tauri::command]
+pub fn kg_remove_node_image(folder: Vec<String>, id: String) -> Result<()> {
+    knowledge::remove_node_image(&folder, &id)
+}
+
+const CURATION_PROMPT: &str = "You are Donna's memory curator. Decide whether the \
+conversation below contains durable, useful knowledge about the USER that is worth \
+remembering long-term. Save ONLY things specifically about this user: facts about their \
+life, work, or study; their routines; their stated preferences; explicit feedback they \
+give Donna; and important people or projects in their life. DO NOT save general world \
+knowledge, your own answers, or transient/trivial chit-chat. It is good and normal to \
+save nothing.\n\nFor each thing worth keeping, choose a category (a folder) and \
+optionally a sub-category (a branch), write a short label, classify the type \
+(info|routine|feedback|preference|person|project), and write a 1-2 sentence note in your \
+own words so you can recall and use it later. Reuse an existing category when it fits.\n\n\
+Return ONLY valid JSON (no prose, no code fences):\n{\"memories\":[{\"category\":\
+\"About You\",\"subcategory\":\"\",\"label\":\"Short label\",\"type\":\"info\",\"note\":\
+\"What to remember and why it matters.\"}]}\nIf nothing qualifies, return \
+{\"memories\":[]}.";
+
+/// Ask Donna to decide what (if anything) from a conversation is worth remembering, then
+/// write those memories into the folder-based knowledge base. Returns the count saved.
 #[tauri::command]
 pub async fn kg_extract(db: State<'_, Db>, conversation_id: i64) -> Result<usize> {
     let config = load_config(&db)?;
@@ -245,7 +327,6 @@ pub async fn kg_extract(db: State<'_, Db>, conversation_id: i64) -> Result<usize
     }
     let api_key = secrets::get_api_key(&config.provider)?;
 
-    // Transcript of the conversation.
     let transcript: String = db
         .get_messages(conversation_id)?
         .iter()
@@ -256,24 +337,17 @@ pub async fn kg_extract(db: State<'_, Db>, conversation_id: i64) -> Result<usize
         return Ok(0);
     }
 
-    // Existing nodes, so the model reuses ids instead of duplicating.
-    let existing: String = db
-        .list_nodes()?
-        .iter()
-        .map(|n| format!("- {} ({}) [{}]", n.id, n.label, n.group))
-        .collect::<Vec<_>>()
-        .join("\n");
-
+    let categories = knowledge::categories()?.join(", ");
     let user_content = format!(
-        "Existing nodes:\n{}\n\nConversation:\n{}",
-        if existing.is_empty() { "(none)" } else { &existing },
+        "Existing categories: {}\n\nConversation:\n{}",
+        if categories.is_empty() { "(none yet)".into() } else { categories },
         transcript
     );
 
     let turns = vec![
         ChatTurn {
             role: "system".into(),
-            content: EXTRACT_PROMPT.into(),
+            content: CURATION_PROMPT.into(),
         },
         ChatTurn {
             role: "user".into(),
@@ -296,36 +370,33 @@ pub async fn kg_extract(db: State<'_, Db>, conversation_id: i64) -> Result<usize
     };
 
     let mut count = 0usize;
-    if let Some(nodes) = parsed.get("nodes").and_then(|n| n.as_array()) {
-        for node in nodes {
-            let label = node.get("label").and_then(|v| v.as_str()).unwrap_or("");
-            if label.trim().is_empty() {
+    if let Some(memories) = parsed.get("memories").and_then(|m| m.as_array()) {
+        for mem in memories {
+            let label = mem.get("label").and_then(|v| v.as_str()).unwrap_or("").trim();
+            if label.is_empty() {
                 continue;
             }
-            let id = node
-                .get("id")
+            let category = mem
+                .get("category")
                 .and_then(|v| v.as_str())
-                .filter(|s| !s.trim().is_empty())
-                .map(slugify)
-                .unwrap_or_else(|| slugify(label));
-            let group = node
-                .get("group")
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .unwrap_or("About You");
+            let note = mem.get("note").and_then(|v| v.as_str()).unwrap_or("");
+            let node_type = mem.get("type").and_then(|v| v.as_str()).unwrap_or("info");
+
+            let mut folder = vec![category.to_string()];
+            if let Some(sub) = mem
+                .get("subcategory")
                 .and_then(|v| v.as_str())
-                .unwrap_or("Topics");
-            let note = node.get("note").and_then(|v| v.as_str()).unwrap_or("");
-            db.upsert_node(&id, label, group, note)?;
-            count += 1;
-        }
-    }
-    if let Some(edges) = parsed.get("edges").and_then(|e| e.as_array()) {
-        for edge in edges {
-            let source = edge.get("source").and_then(|v| v.as_str()).map(slugify);
-            let target = edge.get("target").and_then(|v| v.as_str()).map(slugify);
-            if let (Some(s), Some(t)) = (source, target) {
-                if !s.is_empty() && !t.is_empty() && s != t {
-                    db.add_edge(&s, &t)?;
-                }
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                folder.push(sub.to_string());
             }
+
+            knowledge::save_node(&folder, label, note, node_type, None, None)?;
+            count += 1;
         }
     }
 
@@ -340,22 +411,6 @@ fn extract_json(text: &str) -> Option<serde_json::Value> {
         return None;
     }
     serde_json::from_str(&text[start..=end]).ok()
-}
-
-/// Normalize a label/id into a stable kebab-case identifier.
-fn slugify(input: &str) -> String {
-    let mut out = String::new();
-    let mut prev_dash = false;
-    for ch in input.trim().to_lowercase().chars() {
-        if ch.is_alphanumeric() {
-            out.push(ch);
-            prev_dash = false;
-        } else if !prev_dash && !out.is_empty() {
-            out.push('-');
-            prev_dash = true;
-        }
-    }
-    out.trim_matches('-').to_string()
 }
 
 // --- Integrations ----------------------------------------------------------

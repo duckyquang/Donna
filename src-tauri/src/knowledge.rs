@@ -440,3 +440,169 @@ pub fn categories() -> Result<Vec<String>> {
     cats.dedup();
     Ok(cats)
 }
+
+struct BasicField {
+    label: &'static str,
+    prompt_hint: &'static str,
+    check: fn(&[KbNode]) -> bool,
+}
+
+fn haystack(node: &KbNode) -> String {
+    format!("{} {}", node.label, node.note).to_lowercase()
+}
+
+fn note_is_substantive(note: &str) -> bool {
+    let trimmed = note.trim();
+    trimmed.len() >= 2
+        && !trimmed
+            .to_lowercase()
+            .starts_with("user prefers to be addressed")
+}
+
+fn knows_preferred_name(nodes: &[KbNode]) -> bool {
+    nodes.iter().any(|n| {
+        let label = n.label.to_lowercase();
+        if !(label.contains("name") || label.contains("nickname") || label.contains("call me")) {
+            return false;
+        }
+        let note = n.note.trim();
+        if !note_is_substantive(note) {
+            return false;
+        }
+        let lower = note.to_lowercase();
+        ![
+            "prefers to be addressed",
+            "user prefers",
+            "prefer to be called",
+            "by a nickname",
+            "not specified",
+            "unknown",
+        ]
+        .iter()
+        .any(|v| lower.contains(v))
+    })
+}
+
+fn knows_age(nodes: &[KbNode]) -> bool {
+    nodes.iter().any(|n| {
+        let hay = haystack(n);
+        (hay.contains("age") || hay.contains("years old") || hay.contains("year-old"))
+            && hay.chars().any(|c| c.is_ascii_digit())
+    })
+}
+
+fn knows_birthday(nodes: &[KbNode]) -> bool {
+    nodes.iter().any(|n| {
+        let hay = haystack(n);
+        hay.contains("birthday")
+            || hay.contains("birth date")
+            || hay.contains("date of birth")
+            || hay.contains("born on")
+            || hay.contains("dob")
+    })
+}
+
+fn knows_nationality(nodes: &[KbNode]) -> bool {
+    nodes.iter().any(|n| {
+        let hay = haystack(n);
+        hay.contains("nationality")
+            || hay.contains("national")
+            || hay.contains("citizen")
+            || hay.contains("country of origin")
+            || (hay.contains("from ") && hay.len() > 12)
+    })
+}
+
+fn knows_location(nodes: &[KbNode]) -> bool {
+    nodes.iter().any(|n| {
+        let hay = haystack(n);
+        hay.contains("timezone")
+            || hay.contains("time zone")
+            || hay.contains("city")
+            || hay.contains("located")
+            || hay.contains("lives in")
+            || hay.contains("based in")
+    })
+}
+
+fn knows_work_or_study(nodes: &[KbNode]) -> bool {
+    nodes.iter().any(|n| {
+        n.folder
+            .first()
+            .is_some_and(|f| f == "Work" || f == "Study")
+            || {
+                let hay = haystack(n);
+                hay.contains("employer")
+                    || hay.contains("works at")
+                    || hay.contains("studies at")
+                    || hay.contains("student at")
+                    || hay.contains("job title")
+                    || hay.contains("current role")
+            }
+    })
+}
+
+const BASIC_FIELDS: &[BasicField] = &[
+    BasicField {
+        label: "Preferred name",
+        prompt_hint: "what should Donna call you?",
+        check: knows_preferred_name,
+    },
+    BasicField {
+        label: "Age",
+        prompt_hint: "how old are you, or what age range?",
+        check: knows_age,
+    },
+    BasicField {
+        label: "Nationality",
+        prompt_hint: "what nationality or country do you identify with?",
+        check: knows_nationality,
+    },
+    BasicField {
+        label: "Birthday",
+        prompt_hint: "when is your birthday?",
+        check: knows_birthday,
+    },
+    BasicField {
+        label: "Location / timezone",
+        prompt_hint: "what city or timezone are you in?",
+        check: knows_location,
+    },
+    BasicField {
+        label: "Work or study",
+        prompt_hint: "what do you do for work or study?",
+        check: knows_work_or_study,
+    },
+];
+
+/// Human-readable checklist of core identity facts Donna has vs still needs to ask about.
+pub fn basics_checklist_for_prompt() -> Result<String> {
+    let nodes = graph()?.nodes;
+    let mut known = Vec::new();
+    let mut missing = Vec::new();
+
+    for field in BASIC_FIELDS {
+        if (field.check)(&nodes) {
+            known.push(format!("- ✓ {}", field.label));
+        } else {
+            missing.push(format!(
+                "- ☐ {} ({})",
+                field.label, field.prompt_hint
+            ));
+        }
+    }
+
+    if missing.is_empty() {
+        return Ok("All core identity basics are recorded.".into());
+    }
+
+    let mut out = String::from(
+        "Donna MUST ask about missing basics (highest priority first) before casual topics:\n",
+    );
+    out.push_str(&missing.join("\n"));
+    if !known.is_empty() {
+        out.push_str("\n\nAlready recorded:\n");
+        out.push_str(&known.join("\n"));
+    }
+    Ok(out)
+}

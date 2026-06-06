@@ -22,12 +22,21 @@ practical.\n\n## Knowledge audit (do this every reply)\nBefore you answer, check
 you DO NOT. When gaps exist, ask — never guess, never vaguely agree, never invent facts.\n\n\
 ## Question priority (strict order)\nAsk about higher tiers BEFORE lower ones. Never skip \
 to hobbies or casual interests while basics are missing.\n\
-Tier 1 — Basics: preferred name, work OR study situation (role, field, organization), \
-timezone or city (for scheduling).\n\
+Tier 1 — Core identity (collect these early; do not skip):\n\
+1. Preferred name — what to call them (not just \"they prefer a nickname\"; get the actual name)\n\
+2. Age or age range\n\
+3. Nationality / country they identify with\n\
+4. Birthday (full date, or at least month and day)\n\
+5. Location or timezone (city/country — needed for scheduling)\n\
+6. Work OR study situation (role, field, organization)\n\n\
+If the Basics checklist below shows any missing items, your reply MUST include at least \
+one donna-ask question about the highest-priority missing basic BEFORE hobbies, casual \
+chat, or lower-tier topics. On early conversations, greet warmly and start with their \
+name if unknown.\n\n\
 Tier 2 — Structure: daily/weekly routines, key people (manager, team, clients), active \
 projects or goals.\n\
 Tier 3 — Preferences: how they want you to communicate, priorities, feedback on your help.\n\
-Tier 4 — Interests: hobbies, casual topics (only after Tiers 1–2 are reasonably covered).\n\n\
+Tier 4 — Interests: hobbies, casual topics (only after Tier 1 is reasonably complete).\n\n\
 ## Also proactively ask about\n\
 - Tasks & to-dos: anything they need to do, deadlines, follow-ups, blockers?\n\
 - Donna setup: integrations not connected, model choice, routines not configured, empty \
@@ -40,13 +49,14 @@ Free-text:\n```donna-ask\n{\"type\":\"text\",\"prompt\":\"Your question?\"}\n```
 You may write normal Markdown before and after question blocks. When the user tells you \
 to remember something, acknowledge it clearly.";
 
-/// Assemble the full system prompt: persona + live knowledge + setup status.
+/// Assemble the full system prompt: persona + basics audit + live knowledge + setup status.
 fn build_system_prompt(config: &AppConfig) -> Result<String> {
+    let basics = knowledge::basics_checklist_for_prompt()?;
     let known = knowledge::summary_for_prompt()?;
     let setup = build_setup_context(config)?;
 
     Ok(format!(
-        "{DONNA_SYSTEM_PROMPT}\n\n## What Donna knows about this user\n{known}\n\n{setup}"
+        "{DONNA_SYSTEM_PROMPT}\n\n## Basics checklist\n{basics}\n\n## What Donna knows about this user\n{known}\n\n{setup}"
     ))
 }
 
@@ -281,10 +291,24 @@ pub async fn send_chat(
 
     let api_key = secrets::get_api_key(&config.provider)?;
 
-    // Build the prompt: persona + live knowledge audit + conversation history.
+    // Build the prompt: persona + basics audit + live knowledge + conversation history.
+    let mut system_content = build_system_prompt(&config)?;
+    let user_message_count = db
+        .get_messages(conversation_id)?
+        .iter()
+        .filter(|m| m.role == "user")
+        .count();
+    if user_message_count <= 2 {
+        system_content.push_str(
+            "\n\n## Session note\nThis is an early conversation. Core identity basics \
+             are likely still missing. Prioritize donna-ask questions for name, age, \
+             nationality, and birthday before anything else.",
+        );
+    }
+
     let mut turns: Vec<ChatTurn> = vec![ChatTurn {
         role: "system".into(),
-        content: build_system_prompt(&config)?,
+        content: system_content,
     }];
     for m in db.get_messages(conversation_id)? {
         turns.push(ChatTurn {
@@ -437,7 +461,11 @@ remembering long-term. Save ONLY things specifically about this user: facts abou
 life, work, or study; their routines; their stated preferences; explicit feedback they \
 give Donna; and important people or projects in their life. DO NOT save general world \
 knowledge, your own answers, or transient/trivial chit-chat. It is good and normal to \
-save nothing.\n\nFor each thing worth keeping, choose a category (a folder) and \
+save nothing.\n\nAlways save core identity facts when the user shares them — preferred \
+name, age, nationality, birthday, location/timezone — under the \"About You\" category \
+with clear labels (e.g. \"Preferred Name\", \"Age\", \"Nationality\", \"Birthday\", \
+\"Location\"). Do not save vague meta like \"user prefers a nickname\" without the \
+actual name.\n\nFor each thing worth keeping, choose a category (a folder) and \
 optionally a sub-category (a branch), write a short label, classify the type \
 (info|routine|feedback|preference|person|project), and write a 1-2 sentence note in your \
 own words so you can recall and use it later. Reuse an existing category when it fits.\n\n\

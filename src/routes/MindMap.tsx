@@ -1,20 +1,23 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   Background,
   Controls,
+  useNodesState,
+  useEdgesState,
   type Node,
   type Edge,
   type NodeMouseHandler,
   type NodeTypes,
   type EdgeTypes,
+  type OnNodeDrag,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { RefreshCw, X } from "lucide-react";
-import { KgCircleNode } from "../components/mindmap/KgCircleNode";
+import { KgCircleNode, type KgCircleNodeData } from "../components/mindmap/KgCircleNode";
 import { KgColoredEdge } from "../components/mindmap/KgColoredEdge";
 import { api, type KgGraph, type KgNode } from "../lib/api";
-import { connectionCount, forceLayout } from "../lib/mindmap/forceLayout";
+import { ForceSim, connectionCount, forceLayout } from "../lib/mindmap/forceLayout";
 import { resolveGraphEdges } from "../lib/mindmap/resolveEdges";
 import { Spinner } from "../components/ui";
 
@@ -43,9 +46,24 @@ function nodeSize(id: string, edges: KgGraph["edges"]): number {
   return 10 + Math.min(links, 10) * 1.8;
 }
 
-function buildGraphLayout(graph: KgGraph): { nodes: Node[]; edges: Edge[] } {
-  const resolvedEdges = resolveGraphEdges(graph);
-  const positions = forceLayout(graph.nodes, resolvedEdges);
+function centerToPosition(cx: number, cy: number, size: number) {
+  return { x: cx - size / 2, y: cy - size / 2 };
+}
+
+function nodeCenter(node: Node): { x: number; y: number; size: number } {
+  const size = (node.data as KgCircleNodeData).size ?? node.width ?? 12;
+  return {
+    size,
+    x: node.position.x + size / 2,
+    y: node.position.y + size / 2,
+  };
+}
+
+function buildFlowElements(
+  graph: KgGraph,
+  resolvedEdges: KgGraph["edges"],
+  positions: Map<string, { x: number; y: number }>
+): { nodes: Node[]; edges: Edge[] } {
   const ids = new Set(graph.nodes.map((n) => n.id));
   const nodeColor = new Map(
     graph.nodes.map((n) => [n.id, colorFor(n.group || "Topics")])
@@ -57,7 +75,7 @@ function buildGraphLayout(graph: KgGraph): { nodes: Node[]; edges: Edge[] } {
     return {
       id: m.id,
       type: "kgCircle",
-      position: { x: pos.x - size / 2, y: pos.y - size / 2 },
+      position: centerToPosition(pos.x, pos.y, size),
       width: size,
       height: size,
       data: {
@@ -65,7 +83,7 @@ function buildGraphLayout(graph: KgGraph): { nodes: Node[]; edges: Edge[] } {
         color: colorFor(m.group || "Topics"),
         size,
       },
-      draggable: false,
+      draggable: true,
       selectable: true,
     };
   });
@@ -86,10 +104,23 @@ function buildGraphLayout(graph: KgGraph): { nodes: Node[]; edges: Edge[] } {
   return { nodes, edges };
 }
 
+function applySimPositions(nodes: Node[], sim: ForceSim): Node[] {
+  const positions = sim.positions();
+  return nodes.map((n) => {
+    const size = (n.data as KgCircleNodeData).size;
+    const pos = positions.get(n.id) ?? { x: 0, y: 0 };
+    return { ...n, position: centerToPosition(pos.x, pos.y, size) };
+  });
+}
+
 export default function MindMap() {
   const [graph, setGraph] = useState<KgGraph>({ nodes: [], edges: [] });
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<KgNode | null>(null);
+  const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
+  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const simRef = useRef<ForceSim | null>(null);
+  const didDragRef = useRef(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -104,13 +135,60 @@ export default function MindMap() {
     load();
   }, [load]);
 
-  const { nodes, edges } = useMemo(() => buildGraphLayout(graph), [graph]);
+  useEffect(() => {
+    if (graph.nodes.length === 0) {
+      setRfNodes([]);
+      setRfEdges([]);
+      simRef.current = null;
+      return;
+    }
+    const resolvedEdges = resolveGraphEdges(graph);
+    const layout = forceLayout(graph.nodes, resolvedEdges);
+    simRef.current = ForceSim.fromLayout(
+      graph.nodes.map((n) => n.id),
+      resolvedEdges,
+      layout
+    );
+    const { nodes, edges } = buildFlowElements(graph, resolvedEdges, layout);
+    setRfNodes(nodes);
+    setRfEdges(edges);
+  }, [graph, setRfNodes, setRfEdges]);
+
   const nodeById = useMemo(
     () => new Map(graph.nodes.map((n) => [n.id, n])),
     [graph]
   );
 
+  const onNodeDragStart: OnNodeDrag = () => {
+    didDragRef.current = false;
+  };
+
+  const onNodeDrag: OnNodeDrag = (_e, node) => {
+    didDragRef.current = true;
+    const sim = simRef.current;
+    if (!sim) return;
+
+    const { x, y } = nodeCenter(node);
+    for (let i = 0; i < 5; i++) {
+      sim.tick({ id: node.id, x, y });
+    }
+
+    setRfNodes((nds) => applySimPositions(nds, sim));
+  };
+
+  const onNodeDragStop: OnNodeDrag = (_e, node) => {
+    const sim = simRef.current;
+    if (!sim) return;
+
+    const { x, y } = nodeCenter(node);
+    for (let i = 0; i < 12; i++) {
+      sim.tick({ id: node.id, x, y }, 0.6);
+    }
+    setRfNodes((nds) => applySimPositions(nds, sim));
+  };
+
   const onNodeClick: NodeMouseHandler = (_e, node) => {
+    if (didDragRef.current) return;
     const found = nodeById.get(node.id);
     if (found) setSelected(found);
   };
@@ -129,7 +207,7 @@ export default function MindMap() {
           <h1 className="text-sm font-semibold text-white">Mind Map</h1>
           <p className="text-xs text-gray-500">
             Donna&apos;s living map of what she knows about you · {graph.nodes.length}{" "}
-            nodes · click a node to read its note
+            nodes · drag to rearrange · click for details
           </p>
         </div>
         <button
@@ -170,14 +248,21 @@ export default function MindMap() {
       ) : (
         <div className="mindmap h-full w-full">
           <ReactFlow
-            nodes={nodes}
-            edges={edges}
+            nodes={rfNodes}
+            edges={rfEdges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             onNodeClick={onNodeClick}
+            onNodeDragStart={onNodeDragStart}
+            onNodeDrag={onNodeDrag}
+            onNodeDragStop={onNodeDragStop}
             onPaneClick={onPaneClick}
             nodesConnectable={false}
-            nodesDraggable={false}
+            nodesDraggable
+            nodeDragThreshold={6}
+            panOnDrag
             elementsSelectable
             fitView
             fitViewOptions={{ padding: 0.3 }}

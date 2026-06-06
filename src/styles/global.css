@@ -140,7 +140,11 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
+  cursor: grab;
+}
+
+.mindmap .kg-node:active {
+  cursor: grabbing;
 }
 
 .mindmap .kg-node-circle {

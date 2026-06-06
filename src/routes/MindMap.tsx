@@ -138,7 +138,7 @@ export default function MindMap() {
       </header>
 
       {groupsPresent.length > 0 && (
-        <div className="absolute bottom-4 left-4 z-10 flex flex-wrap gap-2 rounded-xl border border-white/10 bg-donna-surface/90 p-3 backdrop-blur">
+        <div className="absolute bottom-4 right-4 z-10 flex flex-col gap-2 rounded-xl border border-white/10 bg-donna-surface/90 p-3 backdrop-blur">
           {groupsPresent.map((g) => (
             <span key={g} className="flex items-center gap-1.5 text-xs text-gray-300">
               <span

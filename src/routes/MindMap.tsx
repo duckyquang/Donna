@@ -10,7 +10,7 @@ import {
   type OnNodeDrag,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { RefreshCw, X } from "lucide-react";
+import { RefreshCw, Trash2, X } from "lucide-react";
 import { KgCircleNode, type KgCircleNodeData } from "../components/mindmap/KgCircleNode";
 import { MindMapGraphLinks } from "../components/mindmap/MindMapGraphLinks";
 import { api, type KgGraph, type KgEdge, type KgNode } from "../lib/api";
@@ -85,6 +85,8 @@ function applySimPositions(nodes: Node[], sim: ForceSim): Node[] {
 export default function MindMap() {
   const [graph, setGraph] = useState<KgGraph>({ nodes: [], edges: [] });
   const [loading, setLoading] = useState(true);
+  const [resetting, setResetting] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [selected, setSelected] = useState<KgNode | null>(null);
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
   const simRef = useRef<ForceSim | null>(null);
@@ -106,6 +108,18 @@ export default function MindMap() {
       setGraph(await api.kgGraph());
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const resetKnowledge = useCallback(async () => {
+    setResetting(true);
+    try {
+      await api.kgReset();
+      setSelected(null);
+      setShowResetConfirm(false);
+      setGraph({ nodes: [], edges: [] });
+    } finally {
+      setResetting(false);
     }
   }, []);
 
@@ -188,13 +202,25 @@ export default function MindMap() {
             nodes · drag to rearrange · click for details
           </p>
         </div>
-        <button
-          onClick={load}
-          className="flex items-center gap-2 rounded-lg border border-white/15 px-3 py-1.5 text-xs text-gray-200 hover:bg-white/5"
-        >
-          {loading ? <Spinner /> : <RefreshCw size={14} />}
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowResetConfirm(true)}
+            disabled={graph.nodes.length === 0 || loading || resetting}
+            className="flex items-center gap-2 rounded-lg border border-red-500/30 px-3 py-1.5 text-xs text-red-300 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Trash2 size={14} />
+            Reset knowledge
+          </button>
+          <button
+            onClick={load}
+            disabled={loading || resetting}
+            className="flex items-center gap-2 rounded-lg border border-white/15 px-3 py-1.5 text-xs text-gray-200 hover:bg-white/5 disabled:opacity-40"
+          >
+            {loading ? <Spinner /> : <RefreshCw size={14} />}
+            Refresh
+          </button>
+        </div>
       </header>
 
       {groupsPresent.length > 0 && (
@@ -254,6 +280,53 @@ export default function MindMap() {
             <Controls showInteractive={false} />
           </ReactFlow>
         </div>
+      )}
+
+      {showResetConfirm && (
+        <>
+          <button
+            type="button"
+            aria-label="Cancel reset"
+            className="absolute inset-0 z-20 bg-black/55 backdrop-blur-[2px]"
+            onClick={() => !resetting && setShowResetConfirm(false)}
+          />
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="reset-knowledge-title"
+            aria-describedby="reset-knowledge-desc"
+            className="absolute left-1/2 top-1/2 z-30 w-full max-w-md -translate-x-1/2 -translate-y-1/2 px-4"
+          >
+            <div className="rounded-2xl border border-white/10 bg-donna-surface p-5 shadow-2xl">
+              <h2 id="reset-knowledge-title" className="text-base font-semibold text-white">
+                Reset all knowledge?
+              </h2>
+              <p id="reset-knowledge-desc" className="mt-2 text-sm leading-relaxed text-gray-300">
+                This permanently deletes every node and connection on Donna&apos;s mind map.
+                She&apos;ll start learning about you again from scratch. This cannot be undone.
+              </p>
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={resetting}
+                  onClick={() => setShowResetConfirm(false)}
+                  className="rounded-lg border border-white/15 px-4 py-2 text-xs text-gray-200 hover:bg-white/5 disabled:opacity-40"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={resetting}
+                  onClick={resetKnowledge}
+                  className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-xs font-medium text-white hover:bg-red-500 disabled:opacity-40"
+                >
+                  {resetting ? <Spinner /> : <Trash2 size={14} />}
+                  Reset everything
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
       {selected && (

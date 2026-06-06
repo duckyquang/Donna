@@ -73,6 +73,7 @@ pub fn run() {
             commands::send_chat,
             commands::kg_graph,
             commands::kg_extract,
+            commands::kg_reset,
             commands::integrations_status,
             commands::google_set_client,
             commands::google_connect,

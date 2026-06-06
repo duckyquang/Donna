@@ -219,6 +219,11 @@ pub fn kg_graph(db: State<Db>) -> Result<KgGraph> {
     })
 }
 
+#[tauri::command]
+pub fn kg_reset(db: State<Db>) -> Result<()> {
+    db.clear_kg()
+}
+
 const EXTRACT_PROMPT: &str = "You are building a personal knowledge graph about the \
 user from the conversation below. Extract durable facts about the user: people, \
 projects, preferences, routines, places, health, and topics they care about. Ignore \

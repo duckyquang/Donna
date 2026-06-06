@@ -205,6 +205,14 @@ impl Db {
         })?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
+
+    /// Remove all knowledge-graph nodes and edges.
+    pub fn clear_kg(&self) -> Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute("DELETE FROM kg_edges", [])?;
+        conn.execute("DELETE FROM kg_nodes", [])?;
+        Ok(())
+    }
 }
 
 fn migrate(conn: &Connection) -> Result<()> {

@@ -238,6 +238,11 @@ export const api = {
     return invoke("kg_extract", { conversationId });
   },
 
+  /** Wipe all knowledge-graph nodes and edges. */
+  kgReset(): Promise<void> {
+    return invoke("kg_reset");
+  },
+
   // --- Integrations ---
   async integrationsStatus(): Promise<IntegrationStatus[]> {
     const rows = await invoke<RawIntegrationStatus[]>("integrations_status");

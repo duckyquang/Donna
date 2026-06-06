@@ -18,6 +18,37 @@ function nodeCenter(node: ReturnType<typeof useNodes>[number]) {
   };
 }
 
+function nodeRadius(node: ReturnType<typeof useNodes>[number]) {
+  const data = node.data as KgCircleNodeData;
+  const w = node.measured?.width ?? node.width ?? data.size ?? 12;
+  return w / 2;
+}
+
+/** Stop lines at the circle edge (+ glow padding) so they never pierce nodes. */
+function trimLineEndpoints(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  r1: number,
+  r2: number
+) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 1) {
+    return { x1: from.x, y1: from.y, x2: to.x, y2: to.y };
+  }
+  const ux = dx / len;
+  const uy = dy / len;
+  const pad1 = r1 + Math.max(5, r1 * 0.3);
+  const pad2 = r2 + Math.max(5, r2 * 0.3);
+  return {
+    x1: from.x + ux * pad1,
+    y1: from.y + uy * pad1,
+    x2: to.x - ux * pad2,
+    y2: to.y - uy * pad2,
+  };
+}
+
 /** Draw edges in React Flow's native edges layer (behind nodes). */
 export function MindMapGraphLinks({ edges, colorForNode }: MindMapGraphLinksProps) {
   const nodes = useNodes();
@@ -50,14 +81,20 @@ export function MindMapGraphLinks({ edges, colorForNode }: MindMapGraphLinksProp
 
           const from = nodeCenter(source);
           const to = nodeCenter(target);
+          const { x1, y1, x2, y2 } = trimLineEndpoints(
+            from,
+            to,
+            nodeRadius(source),
+            nodeRadius(target)
+          );
 
           return (
             <line
               key={`${edge.source}-${edge.target}-${i}`}
-              x1={from.x}
-              y1={from.y}
-              x2={to.x}
-              y2={to.y}
+              x1={x1}
+              y1={y1}
+              x2={x2}
+              y2={y2}
               stroke={colorForNode(edge.source)}
               strokeWidth={2.5}
               strokeOpacity={0.9}

@@ -138,6 +138,8 @@ body {
 }
 
 .mindmap .kg-node-circle {
+  position: relative;
+  z-index: 1;
   border-radius: 50%;
   border: 1.5px solid rgba(255, 255, 255, 0.22);
   transition: box-shadow 0.2s ease, transform 0.15s ease;
@@ -191,12 +193,20 @@ body {
   pointer-events: none;
 }
 
+.mindmap .react-flow__nodes {
+  z-index: 2;
+}
+
 .mindmap .react-flow__node {
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
   padding: 0 !important;
   z-index: 1;
+}
+
+.mindmap .react-flow__edges {
+  z-index: 0;
 }
 
 .mindmap .mindmap-links {

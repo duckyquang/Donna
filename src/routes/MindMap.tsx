@@ -255,20 +255,6 @@ export default function MindMap() {
         </div>
       </header>
 
-      {groupsPresent.length > 0 && (
-        <div className="absolute bottom-4 right-4 z-10 flex flex-col gap-2 rounded-xl border border-white/10 bg-donna-surface/90 p-3 backdrop-blur">
-          {groupsPresent.map((g) => (
-            <span key={g} className="flex items-center gap-1.5 text-xs text-gray-300">
-              <span
-                className="h-2.5 w-2.5 rounded-full"
-                style={{ background: colorFor(g) }}
-              />
-              {g}
-            </span>
-          ))}
-        </div>
-      )}
-
       {graph.nodes.length === 0 && !loading ? (
         <div className="flex h-full items-center justify-center px-6 text-center">
           <div className="max-w-md">
@@ -282,8 +268,21 @@ export default function MindMap() {
           </div>
         </div>
       ) : (
-        <div className="flex h-full w-full pt-[52px]">
-          <div className="mindmap min-w-0 flex-1">
+        <div className="flex h-full w-full pt-[52px] transition-[padding] duration-300 ease-out">
+          <div className="mindmap relative min-w-0 flex-1 transition-[flex-grow] duration-300 ease-out">
+            {groupsPresent.length > 0 && (
+              <div className="pointer-events-none absolute bottom-4 right-4 z-10 flex flex-col gap-2 rounded-xl border border-white/10 bg-donna-surface/90 p-3 backdrop-blur">
+                {groupsPresent.map((g) => (
+                  <span key={g} className="flex items-center gap-1.5 text-xs text-gray-300">
+                    <span
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ background: colorFor(g) }}
+                    />
+                    {g}
+                  </span>
+                ))}
+              </div>
+            )}
             <ReactFlow
               nodes={rfNodes}
               edges={[]}

@@ -33,7 +33,7 @@ export function NodeDetailPanel({ node, onClose, onEdit, onDeleted }: NodeDetail
   };
 
   return (
-    <aside className="flex w-80 shrink-0 flex-col border-l border-white/10 bg-donna-surface/95 backdrop-blur">
+    <aside className="mindmap-detail-panel flex w-80 shrink-0 flex-col border-l border-white/10 bg-donna-surface/95 backdrop-blur">
       <div className="flex items-start justify-between gap-2 border-b border-white/10 px-4 py-3">
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold text-white">{node.label}</h2>

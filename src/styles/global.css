@@ -201,6 +201,21 @@ body {
   background: var(--donna-surface-raised, #1e1a16);
 }
 
+.mindmap-detail-panel {
+  animation: mindmap-panel-in 0.28s ease-out;
+}
+
+@keyframes mindmap-panel-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0.6;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
 @keyframes thinking-bounce {
   0%,
   60%,

@@ -1,30 +1,34 @@
 import { Markdown } from "./Markdown";
-import { DonnaQuestionBlock } from "./DonnaQuestion";
-import { parseDonnaMessage } from "../lib/donnaQuestions";
+import { DonnaQuestionBlock, DonnaQuestionPending } from "./DonnaQuestion";
+import { parseDonnaMessage, parseDonnaMessageStreaming } from "../lib/donnaQuestions";
 
 interface DonnaMessageProps {
   content: string;
-  /** When false, question widgets stay hidden until the block is complete (streaming). */
-  interactive?: boolean;
+  /** Assistant reply is still streaming from the model. */
+  streaming?: boolean;
   onAnswer?: (answer: string) => void;
 }
 
-export function DonnaMessage({ content, interactive = true, onAnswer }: DonnaMessageProps) {
-  const segments = parseDonnaMessage(content);
+export function DonnaMessage({ content, streaming = false, onAnswer }: DonnaMessageProps) {
+  const { segments, pendingQuestion } = streaming
+    ? parseDonnaMessageStreaming(content)
+    : { segments: parseDonnaMessage(content), pendingQuestion: false };
 
   return (
     <div>
       {segments.map((seg, i) =>
         seg.kind === "markdown" ? (
           <Markdown key={`md-${i}`} content={seg.text} />
-        ) : interactive && onAnswer ? (
+        ) : (
           <DonnaQuestionBlock
             key={`q-${i}`}
             question={seg.question}
-            onAnswer={onAnswer}
+            onAnswer={onAnswer ?? (() => {})}
+            disabled={streaming || !onAnswer}
           />
-        ) : null
+        )
       )}
+      {streaming && pendingQuestion && <DonnaQuestionPending />}
     </div>
   );
 }

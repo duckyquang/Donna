@@ -66,3 +66,58 @@ export function parseDonnaMessage(content: string): MessageSegment[] {
 export function hasDonnaQuestions(content: string): boolean {
   return parseDonnaMessage(content).some((s) => s.kind === "question");
 }
+
+const DONNA_ASK_OPEN = "```donna-ask";
+
+/** Strip a trailing incomplete markdown code fence so raw ``` never flashes during streaming. */
+function stripTrailingIncompleteFence(text: string): string {
+  const last = text.lastIndexOf("```");
+  if (last === -1) return text;
+
+  const tail = text.slice(last);
+  if (tail === "```" || tail === "``" || tail === "`") {
+    return text.slice(0, last);
+  }
+
+  // Opening fence without a closing line yet (e.g. ```donna-ask or ```json).
+  const hasClosingLine = /\n```\s*$/.test(tail);
+  if (!hasClosingLine && tail.startsWith("```")) {
+    return text.slice(0, last);
+  }
+
+  return text;
+}
+
+/**
+ * While the assistant reply is streaming, hide incomplete donna-ask blocks and surface
+ * only markdown + fully parsed questions.
+ */
+export function parseDonnaMessageStreaming(content: string): {
+  segments: MessageSegment[];
+  pendingQuestion: boolean;
+} {
+  const lastOpen = content.lastIndexOf(DONNA_ASK_OPEN);
+  if (lastOpen === -1) {
+    const visible = stripTrailingIncompleteFence(content);
+    return {
+      segments: visible.trim() ? parseDonnaMessage(visible) : [],
+      pendingQuestion: false,
+    };
+  }
+
+  const afterOpen = content.slice(lastOpen);
+  const completeBlock = /^```donna-ask\n[\s\S]*?\n```/.test(afterOpen);
+
+  if (completeBlock) {
+    return {
+      segments: parseDonnaMessage(content),
+      pendingQuestion: false,
+    };
+  }
+
+  const visible = content.slice(0, lastOpen);
+  return {
+    segments: visible.trim() ? parseDonnaMessage(visible) : [],
+    pendingQuestion: true,
+  };
+}

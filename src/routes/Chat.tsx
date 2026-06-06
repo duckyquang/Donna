@@ -187,12 +187,13 @@ export default function Chat() {
                 onQuestionAnswer={m.role === "assistant" ? handleQuestionAnswer : undefined}
               />
             ))}
-            {streaming && (
+            {streaming && !streamingText && <StreamingPlaceholder />}
+            {streaming && streamingText && (
               <Bubble
                 role="assistant"
-                content={streamingText || "…"}
-                pending
-                onQuestionAnswer={undefined}
+                content={streamingText}
+                streaming
+                onQuestionAnswer={handleQuestionAnswer}
               />
             )}
             {error && (
@@ -232,20 +233,30 @@ export default function Chat() {
   );
 }
 
+function StreamingPlaceholder() {
+  return (
+    <div className="flex justify-start">
+      <div className="rounded-2xl border border-white/10 bg-donna-surface px-4 py-3">
+        <Spinner />
+      </div>
+    </div>
+  );
+}
+
 function Bubble({
   role,
   content,
-  pending,
+  streaming,
   onQuestionAnswer,
 }: {
   role: Message["role"];
   content: string;
-  pending?: boolean;
+  streaming?: boolean;
   onQuestionAnswer?: (answer: string) => void;
 }) {
   const isUser = role === "user";
   const showQuestions =
-    !pending && !isUser && onQuestionAnswer && hasDonnaQuestions(content);
+    !streaming && !isUser && onQuestionAnswer && hasDonnaQuestions(content);
 
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
@@ -254,14 +265,14 @@ function Bubble({
           isUser
             ? "whitespace-pre-wrap bg-donna-accent text-white"
             : "border border-white/10 bg-donna-surface text-gray-100"
-        } ${pending ? "opacity-90" : ""}`}
+        } ${streaming ? "opacity-90" : ""}`}
       >
         {isUser ? (
           content
         ) : (
           <DonnaMessage
             content={content}
-            interactive={showQuestions}
+            streaming={streaming}
             onAnswer={showQuestions ? onQuestionAnswer : undefined}
           />
         )}

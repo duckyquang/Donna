@@ -1,11 +1,22 @@
 import { useState } from "react";
 import { Send } from "lucide-react";
 import type { DonnaQuestion as Q } from "../lib/donnaQuestions";
+import { Spinner } from "./ui";
 
 interface DonnaQuestionProps {
   question: Q;
   onAnswer: (answer: string) => void;
   disabled?: boolean;
+}
+
+/** Shown under streamed text while a donna-ask block is still being generated. */
+export function DonnaQuestionPending() {
+  return (
+    <div className="mt-3 flex items-center gap-2 rounded-xl border border-white/10 bg-donna-bg/50 px-4 py-3">
+      <Spinner />
+      <span className="text-xs text-gray-500">Preparing a question…</span>
+    </div>
+  );
 }
 
 export function DonnaQuestionBlock({ question, onAnswer, disabled }: DonnaQuestionProps) {

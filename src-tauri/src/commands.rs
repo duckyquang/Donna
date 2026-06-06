@@ -455,9 +455,13 @@ pub fn kg_graph() -> Result<GraphResponse> {
     Ok(GraphResponse { nodes, edges })
 }
 
+/// Wipe the knowledge base, all chat history, and profile onboarding so Donna starts fresh.
 #[tauri::command]
-pub fn kg_reset() -> Result<()> {
-    knowledge::reset()
+pub fn kg_reset(db: State<Db>) -> Result<()> {
+    knowledge::reset()?;
+    db.delete_all_conversations()?;
+    db.set_setting("profile_onboarded", "false")?;
+    Ok(())
 }
 
 #[tauri::command]

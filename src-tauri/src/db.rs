@@ -102,6 +102,14 @@ impl Db {
         Ok(())
     }
 
+    /// Wipe every conversation and message — used when the user resets Donna's knowledge.
+    pub fn delete_all_conversations(&self) -> Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute("DELETE FROM messages", [])?;
+        conn.execute("DELETE FROM conversations", [])?;
+        Ok(())
+    }
+
     pub fn add_message(&self, conversation_id: i64, role: &str, content: &str) -> Result<i64> {
         let conn = self.0.lock().unwrap();
         let now = now_iso();

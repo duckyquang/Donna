@@ -151,6 +151,9 @@ knowledge base, rendered as cartography.
 - **What gets captured**: information about the user and their life/work/study, their
   routines, explicit feedback they give Donna, important people/projects, and other
   durable facts.
+- **Reset knowledge** (Mind Map toolbar): wipes the folder tree, deletes all chat
+  history, clears profile onboarding, and sends the user through the getting-to-know-you
+  flow again. Model and integration settings are preserved.
 - **Click a node to read or edit**: selecting a file node shows Donna's note (and image);
   the user can edit the label, description, type, and category, attach/remove an image,
   or delete the node — changes are written straight back to the files.

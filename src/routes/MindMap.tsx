@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   ReactFlow,
   Background,
@@ -16,6 +17,7 @@ import { MindMapGraphLinks } from "../components/mindmap/MindMapGraphLinks";
 import { NodeDetailPanel } from "../components/mindmap/NodeDetailPanel";
 import { NodeEditor } from "../components/mindmap/NodeEditor";
 import { api, type KgGraph, type KgEdge, type KgNode } from "../lib/api";
+import { useConfig } from "../lib/useConfig";
 import { ForceSim, connectionCount, forceLayout } from "../lib/mindmap/forceLayout";
 import { resolveGraphEdges } from "../lib/mindmap/resolveEdges";
 import { Spinner } from "../components/ui";
@@ -107,6 +109,8 @@ function applySimPositions(nodes: Node[], sim: ForceSim): Node[] {
 }
 
 export default function MindMap() {
+  const navigate = useNavigate();
+  const { refresh: refreshConfig } = useConfig();
   const [graph, setGraph] = useState<KgGraph>({ nodes: [], edges: [] });
   const [loading, setLoading] = useState(true);
   const [resetting, setResetting] = useState(false);
@@ -140,13 +144,16 @@ export default function MindMap() {
     setResetting(true);
     try {
       await api.kgReset();
+      await refreshConfig();
       setEditing(null);
+      setSelectedId(null);
       setShowResetConfirm(false);
       setGraph({ nodes: [], edges: [] });
+      navigate("/chat");
     } finally {
       setResetting(false);
     }
-  }, []);
+  }, [navigate, refreshConfig]);
 
   useEffect(() => {
     load();
@@ -395,8 +402,10 @@ export default function MindMap() {
                 Reset all knowledge?
               </h2>
               <p id="reset-knowledge-desc" className="mt-2 text-sm leading-relaxed text-gray-300">
-                This permanently deletes every node and connection on Donna&apos;s mind map.
-                She&apos;ll start learning about you again from scratch. This cannot be undone.
+                This permanently deletes Donna&apos;s mind map, every chat conversation, and
+                your profile basics. You&apos;ll go through the getting-to-know-you setup
+                again before chatting. Your model and integration settings are kept. This
+                cannot be undone.
               </p>
               <div className="mt-5 flex justify-end gap-2">
                 <button

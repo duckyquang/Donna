@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, Send, Trash2 } from "lucide-react";
 import { api, type Conversation, type Message } from "../lib/api";
 import { useConfig } from "../lib/useConfig";
 import { Spinner } from "../components/ui";
-import { Markdown } from "../components/Markdown";
+import { DonnaMessage } from "../components/DonnaMessage";
+import { hasDonnaQuestions } from "../lib/donnaQuestions";
+
+const PLACEHOLDER_TITLE = "New conversation";
 
 export default function Chat() {
   const { config } = useConfig();
@@ -65,46 +68,58 @@ export default function Chat() {
     }
   };
 
-  const handleSend = async () => {
-    const text = input.trim();
-    if (!text || streaming) return;
-    setError(null);
-    setInput("");
+  const sendMessage = useCallback(
+    async (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed || streaming) return;
+      setError(null);
 
-    let convId = activeId;
-    if (convId === null) {
-      convId = await api.createConversation(text.slice(0, 48));
-      setActiveId(convId);
-      await refreshConversations();
-    }
+      let convId = activeId;
+      if (convId === null) {
+        convId = await api.createConversation(PLACEHOLDER_TITLE);
+        setActiveId(convId);
+        await refreshConversations();
+      }
 
-    await api.addMessage(convId, "user", text);
-    await loadMessages(convId);
-
-    setStreaming(true);
-    setStreamingText("");
-    try {
-      await api.sendChat(convId, (event) => {
-        if (event.type === "token") {
-          setStreamingText((prev) => prev + event.content);
-        } else if (event.type === "error") {
-          setError(event.message);
-        }
-      });
+      await api.addMessage(convId, "user", trimmed);
       await loadMessages(convId);
-      // Let Donna update her knowledge map in the background (best-effort).
-      api.kgExtract(convId).catch(() => {});
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setStreaming(false);
+
+      setStreaming(true);
       setStreamingText("");
-    }
+      try {
+        await api.sendChat(convId, (event) => {
+          if (event.type === "token") {
+            setStreamingText((prev) => prev + event.content);
+          } else if (event.type === "error") {
+            setError(event.message);
+          }
+        });
+        await loadMessages(convId);
+        await refreshConversations();
+        api.kgExtract(convId).catch(() => {});
+      } catch (e) {
+        setError(String(e));
+      } finally {
+        setStreaming(false);
+        setStreamingText("");
+      }
+    },
+    [activeId, streaming]
+  );
+
+  const handleSend = () => {
+    const text = input.trim();
+    if (!text) return;
+    setInput("");
+    sendMessage(text);
+  };
+
+  const handleQuestionAnswer = (answer: string) => {
+    sendMessage(answer);
   };
 
   return (
     <div className="flex h-full">
-      {/* Conversation list */}
       <div className="flex w-64 flex-col border-r border-white/10 bg-donna-panel">
         <div className="flex items-center justify-between p-3">
           <span className="text-xs font-medium uppercase tracking-wide text-gray-500">
@@ -149,7 +164,6 @@ export default function Chat() {
         </div>
       </div>
 
-      {/* Messages */}
       <div className="flex flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-white/10 px-6 py-3">
           <h1 className="text-sm font-semibold text-white">Chat</h1>
@@ -162,14 +176,24 @@ export default function Chat() {
           <div className="mx-auto max-w-2xl space-y-4">
             {messages.length === 0 && !streaming && (
               <div className="mt-20 text-center text-sm text-gray-500">
-                Say hello to Donna, or teach her something about your routine.
+                Say hello to Donna — she&apos;ll ask when she needs to know more about you.
               </div>
             )}
             {messages.map((m) => (
-              <Bubble key={m.id} role={m.role} content={m.content} />
+              <Bubble
+                key={m.id}
+                role={m.role}
+                content={m.content}
+                onQuestionAnswer={m.role === "assistant" ? handleQuestionAnswer : undefined}
+              />
             ))}
             {streaming && (
-              <Bubble role="assistant" content={streamingText || "…"} pending />
+              <Bubble
+                role="assistant"
+                content={streamingText || "…"}
+                pending
+                onQuestionAnswer={undefined}
+              />
             )}
             {error && (
               <p className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
@@ -212,12 +236,17 @@ function Bubble({
   role,
   content,
   pending,
+  onQuestionAnswer,
 }: {
   role: Message["role"];
   content: string;
   pending?: boolean;
+  onQuestionAnswer?: (answer: string) => void;
 }) {
   const isUser = role === "user";
+  const showQuestions =
+    !pending && !isUser && onQuestionAnswer && hasDonnaQuestions(content);
+
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
@@ -227,7 +256,15 @@ function Bubble({
             : "border border-white/10 bg-donna-surface text-gray-100"
         } ${pending ? "opacity-90" : ""}`}
       >
-        {isUser ? content : <Markdown content={content} />}
+        {isUser ? (
+          content
+        ) : (
+          <DonnaMessage
+            content={content}
+            interactive={showQuestions}
+            onAnswer={showQuestions ? onQuestionAnswer : undefined}
+          />
+        )}
       </div>
     </div>
   );

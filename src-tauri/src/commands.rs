@@ -17,8 +17,16 @@ use crate::secrets;
 const DONNA_SYSTEM_PROMPT: &str = "You are Donna, a warm, sharp, and proactive personal \
 assistant who is private and runs locally on the user's own device. You learn about the \
 user over time, help them think, draft, and stay organized, and you are concise and \
-practical. When the user tells you to remember something about themselves or their \
-routines, acknowledge it clearly.";
+practical.\n\nWhen you need information about the user that you do NOT already know, \
+ASK — never guess, never vaguely agree, and never invent facts. Embed your question \
+directly in your reply using a donna-ask block so the user can answer with one click.\n\n\
+Multiple choice (always include \"Other\" as the last option):\n```donna-ask\n\
+{\"type\":\"choice\",\"prompt\":\"Your question?\",\"options\":[\"Option A\",\"Option B\",\"Other\"]}\n\
+```\n\nFree-text answer:\n```donna-ask\n\
+{\"type\":\"text\",\"prompt\":\"Your question?\"}\n```\n\nYou may write normal Markdown \
+before and after a question block. Use one question per block. Only ask when the answer \
+would genuinely help you help them. When the user tells you to remember something, \
+acknowledge it clearly.";
 
 // --- Config -----------------------------------------------------------------
 
@@ -132,6 +140,69 @@ pub fn add_message(
     db.add_message(conversation_id, &role, &content)
 }
 
+const PLACEHOLDER_TITLE: &str = "New conversation";
+
+/// After the first exchange, replace the placeholder title with one Donna generates.
+async fn maybe_generate_title(
+    db: &Db,
+    conversation_id: i64,
+    provider: &str,
+    model: &str,
+    api_key: Option<String>,
+    ollama_host: &str,
+) -> Result<()> {
+    let current = db
+        .list_conversations()?
+        .into_iter()
+        .find(|c| c.id == conversation_id)
+        .map(|c| c.title)
+        .unwrap_or_default();
+
+    if current != PLACEHOLDER_TITLE {
+        return Ok(());
+    }
+
+    let messages = db.get_messages(conversation_id)?;
+    if !messages.iter().any(|m| m.role == "assistant") {
+        return Ok(());
+    }
+
+    let transcript: String = messages
+        .iter()
+        .filter(|m| m.role == "user" || m.role == "assistant")
+        .map(|m| format!("{}: {}", m.role, m.content))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let turns = vec![
+        ChatTurn {
+            role: "system".into(),
+            content: "Write a short conversation title (3-6 words) that captures the topic. \
+                      No quotes, no trailing punctuation. Return ONLY the title."
+                .into(),
+        },
+        ChatTurn {
+            role: "user".into(),
+            content: transcript,
+        },
+    ];
+
+    let raw = providers::complete(provider, model, api_key, ollama_host, &turns).await?;
+    let title = raw
+        .trim()
+        .trim_matches('"')
+        .lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+
+    if !title.is_empty() && title.len() <= 80 {
+        db.rename_conversation(conversation_id, &title)?;
+    }
+    Ok(())
+}
+
 // --- Streaming chat ---------------------------------------------------------
 
 /// Events streamed to the frontend over a Tauri channel during a chat completion.
@@ -192,6 +263,15 @@ pub async fn send_chat(
     match result {
         Ok(()) => {
             let id = db.add_message(conversation_id, "assistant", &answer)?;
+            let _ = maybe_generate_title(
+                &db,
+                conversation_id,
+                &config.provider,
+                &config.model,
+                secrets::get_api_key(&config.provider)?,
+                &config.ollama_host,
+            )
+            .await;
             let _ = on_event.send(ChatEvent::Done { message_id: id });
             Ok(())
         }

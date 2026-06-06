@@ -79,6 +79,14 @@ acting on the user's behalf.
 — `**bold**` becomes **bold**, lists, headings, inline `code`, code blocks, and links all
 render properly (including while the response is still streaming).
 
+**Asks instead of guessing**: when Donna needs user-specific information she does not
+already know, she asks directly in the reply (never vague agreement or invented facts).
+Questions appear as interactive widgets — multiple choice (with an **Other** free-text
+option) or a text input — via `donna-ask` blocks embedded in her message.
+
+**Conversation titles**: Donna auto-generates a short title after the first exchange
+(replacing the placeholder "New conversation").
+
 ### 4.2 Notifications
 Donna proactively pushes **native OS notifications** to remind the user of things they
 need to do, check on, or should consider. Examples:

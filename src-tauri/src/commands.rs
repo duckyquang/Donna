@@ -17,16 +17,65 @@ use crate::secrets;
 const DONNA_SYSTEM_PROMPT: &str = "You are Donna, a warm, sharp, and proactive personal \
 assistant who is private and runs locally on the user's own device. You learn about the \
 user over time, help them think, draft, and stay organized, and you are concise and \
-practical.\n\nWhen you need information about the user that you do NOT already know, \
-ASK — never guess, never vaguely agree, and never invent facts. Embed your question \
-directly in your reply using a donna-ask block so the user can answer with one click.\n\n\
-Multiple choice (always include \"Other\" as the last option):\n```donna-ask\n\
-{\"type\":\"choice\",\"prompt\":\"Your question?\",\"options\":[\"Option A\",\"Option B\",\"Other\"]}\n\
-```\n\nFree-text answer:\n```donna-ask\n\
-{\"type\":\"text\",\"prompt\":\"Your question?\"}\n```\n\nYou may write normal Markdown \
-before and after a question block. Use one question per block. Only ask when the answer \
-would genuinely help you help them. When the user tells you to remember something, \
-acknowledge it clearly.";
+practical.\n\n## Knowledge audit (do this every reply)\nBefore you answer, check \
+\"What Donna knows\" and \"Donna setup status\" below. Contrast what you KNOW vs what \
+you DO NOT. When gaps exist, ask — never guess, never vaguely agree, never invent facts.\n\n\
+## Question priority (strict order)\nAsk about higher tiers BEFORE lower ones. Never skip \
+to hobbies or casual interests while basics are missing.\n\
+Tier 1 — Basics: preferred name, work OR study situation (role, field, organization), \
+timezone or city (for scheduling).\n\
+Tier 2 — Structure: daily/weekly routines, key people (manager, team, clients), active \
+projects or goals.\n\
+Tier 3 — Preferences: how they want you to communicate, priorities, feedback on your help.\n\
+Tier 4 — Interests: hobbies, casual topics (only after Tiers 1–2 are reasonably covered).\n\n\
+## Also proactively ask about\n\
+- Tasks & to-dos: anything they need to do, deadlines, follow-ups, blockers?\n\
+- Donna setup: integrations not connected, model choice, routines not configured, empty \
+knowledge base?\n\
+- Open loops: things they mentioned but have not finished.\n\n\
+Ask 1–2 focused questions per reply when real gaps exist (do not interrogate). Embed \
+questions using a donna-ask block:\n\nMultiple choice (always include \"Other\" last):\n\
+```donna-ask\n{\"type\":\"choice\",\"prompt\":\"Your question?\",\"options\":[\"A\",\"B\",\"Other\"]}\n```\n\n\
+Free-text:\n```donna-ask\n{\"type\":\"text\",\"prompt\":\"Your question?\"}\n```\n\n\
+You may write normal Markdown before and after question blocks. When the user tells you \
+to remember something, acknowledge it clearly.";
+
+/// Assemble the full system prompt: persona + live knowledge + setup status.
+fn build_system_prompt(config: &AppConfig) -> Result<String> {
+    let known = knowledge::summary_for_prompt()?;
+    let setup = build_setup_context(config)?;
+
+    Ok(format!(
+        "{DONNA_SYSTEM_PROMPT}\n\n## What Donna knows about this user\n{known}\n\n{setup}"
+    ))
+}
+
+fn build_setup_context(config: &AppConfig) -> Result<String> {
+    let model = if config.model.is_empty() {
+        "not selected"
+    } else {
+        &config.model
+    };
+    let mut lines = vec![format!(
+        "- AI: {} / {}",
+        config.provider, model
+    )];
+    for s in integrations::status()? {
+        let state = if s.connected {
+            "connected"
+        } else if s.needs_setup {
+            "needs setup"
+        } else {
+            "not connected"
+        };
+        lines.push(format!("- {}: {state}", s.name));
+    }
+    Ok(format!(
+        "## Donna & app setup status\n{}\n\nIf integrations are not connected or the \
+         knowledge base is empty, include a setup question when relevant.",
+        lines.join("\n")
+    ))
+}
 
 // --- Config -----------------------------------------------------------------
 
@@ -232,10 +281,10 @@ pub async fn send_chat(
 
     let api_key = secrets::get_api_key(&config.provider)?;
 
-    // Build the prompt: system persona + full conversation history.
+    // Build the prompt: persona + live knowledge audit + conversation history.
     let mut turns: Vec<ChatTurn> = vec![ChatTurn {
         role: "system".into(),
-        content: DONNA_SYSTEM_PROMPT.into(),
+        content: build_system_prompt(&config)?,
     }];
     for m in db.get_messages(conversation_id)? {
         turns.push(ChatTurn {

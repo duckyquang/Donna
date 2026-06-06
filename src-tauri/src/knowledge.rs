@@ -403,6 +403,30 @@ pub fn reset() -> Result<()> {
     ensure_root()
 }
 
+/// Compact summary of everything Donna knows, injected into the chat system prompt so
+/// she can contrast known vs unknown facts before asking questions.
+pub fn summary_for_prompt() -> Result<String> {
+    let g = graph()?;
+    if g.nodes.is_empty() {
+        return Ok("(empty — Donna does not know anything about this user yet)".into());
+    }
+    let mut lines: Vec<String> = g
+        .nodes
+        .iter()
+        .map(|n| {
+            let folder = n.folder.join(" / ");
+            let note = if n.note.len() > 100 {
+                format!("{}…", &n.note[..100])
+            } else {
+                n.note.clone()
+            };
+            format!("- [{folder}] {} ({}) — {note}", n.label, n.node_type)
+        })
+        .collect();
+    lines.sort();
+    Ok(lines.join("\n"))
+}
+
 /// Existing category names (top-level folders), for prompting and the UI.
 pub fn categories() -> Result<Vec<String>> {
     let g = graph()?;

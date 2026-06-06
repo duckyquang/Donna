@@ -79,6 +79,13 @@ acting on the user's behalf.
 — `**bold**` becomes **bold**, lists, headings, inline `code`, code blocks, and links all
 render properly (including while the response is still streaming).
 
+**Knowledge audit**: every reply, Donna contrasts what she already knows (from the
+`knowledge-base/` folder tree, injected into her system prompt) with what she does not.
+She prioritizes questions in strict order — basics first (name, work/study, timezone),
+then structure (routines, key people, projects), then preferences, and only then
+hobbies or casual interests. She also proactively asks about tasks/to-dos, Donna setup
+(integrations, model, empty knowledge base), and open loops the user mentioned.
+
 **Asks instead of guessing**: when Donna needs user-specific information she does not
 already know, she asks directly in the reply (never vague agreement or invented facts).
 Questions appear as interactive widgets — multiple choice (with an **Other** free-text

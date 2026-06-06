@@ -12,6 +12,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Plus, RefreshCw, Trash2 } from "lucide-react";
+import { CategoryPicker } from "../components/mindmap/CategoryPicker";
 import { KgCircleNode, type KgCircleNodeData } from "../components/mindmap/KgCircleNode";
 import { MindMapGraphLinks } from "../components/mindmap/MindMapGraphLinks";
 import { NodeDetailPanel } from "../components/mindmap/NodeDetailPanel";
@@ -43,6 +44,29 @@ function topCategory(group: string): string {
   return (group.split(" / ")[0] ?? group).trim();
 }
 
+function nodeCategory(node: KgNode): string {
+  return topCategory(node.folder[0] ?? node.group ?? "Topics");
+}
+
+function filterByCategory(graph: KgGraph, category: string): KgGraph {
+  const nodes = graph.nodes.filter((n) => nodeCategory(n) === category);
+  const ids = new Set(nodes.map((n) => n.id));
+  const edges = graph.edges.filter((e) => ids.has(e.source) && ids.has(e.target));
+  return { nodes, edges };
+}
+
+function toLayoutNodes(nodes: KgNode[], edges: KgEdge[]): LayoutNode[] {
+  return nodes.map((n) => {
+    const size = nodeSize(n, edges);
+    const diameter = n.type === "folder" ? Math.max(size, 22) : size;
+    return {
+      id: n.id,
+      group: nodeCategory(n),
+      radius: diameter / 2 + 10,
+    };
+  });
+}
+
 function colorFor(group: string): string {
   const top = topCategory(group);
   if (GROUP_COLORS[top]) return GROUP_COLORS[top];
@@ -62,18 +86,6 @@ function nodeSize(node: KgNode, edges: KgEdge[]): number {
 function nodeDimensions(d: KgCircleNodeData) {
   const s = d.isFolder ? Math.max(d.size, 22) : d.size;
   return { w: s, h: s };
-}
-
-function layoutNodesFor(graph: KgGraph, edges: KgEdge[]): LayoutNode[] {
-  return graph.nodes.map((n) => {
-    const size = nodeSize(n, edges);
-    const glowPad = 8;
-    return {
-      id: n.id,
-      group: topCategory(n.folder[0] ?? n.group ?? "Topics"),
-      radius: size / 2 + glowPad,
-    };
-  });
 }
 
 function centerToPosition(cx: number, cy: number, w: number, h: number) {
@@ -131,20 +143,46 @@ export default function MindMap() {
   const [loading, setLoading] = useState(true);
   const [resetting, setResetting] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<KgNode | "new" | null>(null);
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
   const simRef = useRef<ForceSim | null>(null);
   const didDragRef = useRef(false);
 
+  const groupsPresent = useMemo(
+    () =>
+      [...new Set(graph.nodes.map((n) => nodeCategory(n)))].sort(),
+    [graph.nodes]
+  );
+
+  useEffect(() => {
+    if (groupsPresent.length === 0) {
+      setActiveCategory(null);
+      return;
+    }
+    setActiveCategory((prev) =>
+      prev && groupsPresent.includes(prev) ? prev : groupsPresent[0]!
+    );
+  }, [groupsPresent]);
+
+  const filteredGraph = useMemo(() => {
+    if (!activeCategory) return { nodes: [], edges: [] };
+    return filterByCategory(graph, activeCategory);
+  }, [graph, activeCategory]);
+
   const resolvedEdges = useMemo(
-    () => (graph.nodes.length > 0 ? resolveGraphEdges(graph) : []),
-    [graph]
+    () =>
+      filteredGraph.nodes.length > 0 ? resolveGraphEdges(filteredGraph) : [],
+    [filteredGraph]
   );
 
   const nodeColorById = useMemo(
-    () => new Map(graph.nodes.map((n) => [n.id, colorFor(n.group || "Topics")])),
-    [graph.nodes]
+    () =>
+      new Map(
+        filteredGraph.nodes.map((n) => [n.id, colorFor(n.folder[0] ?? n.group ?? "Topics")])
+      ),
+    [filteredGraph.nodes]
   );
 
   const load = useCallback(async () => {
@@ -176,21 +214,27 @@ export default function MindMap() {
   }, [load]);
 
   useEffect(() => {
-    if (graph.nodes.length === 0) {
+    if (filteredGraph.nodes.length === 0) {
       setRfNodes([]);
       simRef.current = null;
       return;
     }
-    const layoutMeta = layoutNodesFor(graph, resolvedEdges);
-    const layout = forceLayout(layoutMeta, resolvedEdges);
-    simRef.current = ForceSim.fromLayout(layoutMeta, resolvedEdges, layout);
-    setRfNodes(buildFlowNodes(graph, resolvedEdges, layout));
-  }, [graph, resolvedEdges, setRfNodes]);
+    const layoutNodes = toLayoutNodes(filteredGraph.nodes, resolvedEdges);
+    const layout = forceLayout(layoutNodes, resolvedEdges);
+    simRef.current = ForceSim.fromLayout(layoutNodes, resolvedEdges, layout);
+    setRfNodes(buildFlowNodes(filteredGraph, resolvedEdges, layout));
+  }, [filteredGraph, resolvedEdges, setRfNodes]);
 
   const nodeById = useMemo(
-    () => new Map(graph.nodes.map((n) => [n.id, n])),
-    [graph]
+    () => new Map(filteredGraph.nodes.map((n) => [n.id, n])),
+    [filteredGraph.nodes]
   );
+
+  const handleCategoryChange = (category: string) => {
+    setActiveCategory(category);
+    setSelectedId(null);
+    setEditing(null);
+  };
 
   const selectedNode = selectedId ? nodeById.get(selectedId) ?? null : null;
 
@@ -255,23 +299,13 @@ export default function MindMap() {
     setRfNodes((nds) => nds.map((n) => ({ ...n, selected: false })));
   };
 
-  const groupsPresent = useMemo(
-    () =>
-      [
-        ...new Set(
-          graph.nodes.map((n) => topCategory(n.folder[0] ?? n.group ?? "Topics"))
-        ),
-      ].sort(),
-    [graph]
-  );
-
   const childNodes = useMemo(() => {
     if (!selectedId) return [];
     const childIds = new Set(
       resolvedEdges.filter((e) => e.source === selectedId).map((e) => e.target)
     );
-    return graph.nodes.filter((n) => childIds.has(n.id));
-  }, [selectedId, graph.nodes, resolvedEdges]);
+    return filteredGraph.nodes.filter((n) => childIds.has(n.id));
+  }, [selectedId, filteredGraph.nodes, resolvedEdges]);
 
   return (
     <div className="relative h-full w-full bg-donna-bg">
@@ -279,8 +313,9 @@ export default function MindMap() {
         <div>
           <h1 className="text-sm font-semibold text-white">Mind Map</h1>
           <p className="text-xs text-gray-500">
-            Donna&apos;s living map of what she knows about you · {graph.nodes.length}{" "}
-            nodes · drag to rearrange · click a node to read its details
+            Donna&apos;s living map of what she knows about you ·{" "}
+            {activeCategory ? `${filteredGraph.nodes.length} in ${activeCategory}` : "0 nodes"}{" "}
+            · drag to rearrange · click a node to read its details
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -327,20 +362,16 @@ export default function MindMap() {
       ) : (
         <div className="flex h-full w-full pt-[52px] transition-[padding] duration-300 ease-out">
           <div className="mindmap relative min-w-0 flex-1 transition-[flex-grow] duration-300 ease-out">
-            {groupsPresent.length > 0 && (
-              <div className="pointer-events-none absolute bottom-4 right-4 z-10 flex flex-col gap-2 rounded-xl border border-white/10 bg-donna-surface/90 p-3 backdrop-blur">
-                {groupsPresent.map((g) => (
-                  <span key={g} className="flex items-center gap-1.5 text-xs text-gray-300">
-                    <span
-                      className="h-2.5 w-2.5 rounded-full"
-                      style={{ background: colorFor(g) }}
-                    />
-                    {g}
-                  </span>
-                ))}
-              </div>
+            {activeCategory && groupsPresent.length > 0 && (
+              <CategoryPicker
+                categories={groupsPresent}
+                active={activeCategory}
+                colorFor={colorFor}
+                onChange={handleCategoryChange}
+              />
             )}
             <ReactFlow
+              key={activeCategory ?? "none"}
               nodes={rfNodes}
               edges={[]}
               onNodesChange={onNodesChange}

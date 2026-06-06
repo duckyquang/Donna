@@ -1,5 +1,5 @@
-import { memo, type CSSProperties } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { memo, useEffect } from "react";
+import { Handle, Position, useNodeId, useUpdateNodeInternals, type NodeProps } from "@xyflow/react";
 
 export type KgCircleNodeData = {
   label: string;
@@ -7,37 +7,42 @@ export type KgCircleNodeData = {
   size: number;
 };
 
+const centerHandleStyle: React.CSSProperties = {
+  opacity: 0,
+  width: 1,
+  height: 1,
+  left: "50%",
+  top: "50%",
+  transform: "translate(-50%, -50%)",
+  border: "none",
+  background: "transparent",
+  minWidth: 0,
+  minHeight: 0,
+};
+
 function KgCircleNodeComponent({ data, selected }: NodeProps) {
   const d = data as KgCircleNodeData;
-  const handleStyle: CSSProperties = {
-    opacity: 0,
-    width: 1,
-    height: 1,
-    minWidth: 0,
-    minHeight: 0,
-    border: "none",
-    background: "transparent",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -50%)",
-  };
+  const nodeId = useNodeId();
+  const updateNodeInternals = useUpdateNodeInternals();
+
+  useEffect(() => {
+    if (nodeId) updateNodeInternals(nodeId);
+  }, [nodeId, updateNodeInternals, d.size]);
 
   return (
     <div className="kg-node" style={{ width: d.size, height: d.size }} title={d.label}>
       <Handle
-        type="target"
+        id="center-out"
+        type="source"
         position={Position.Top}
-        id="target"
-        className="kg-node-handle"
-        style={handleStyle}
+        style={centerHandleStyle}
         isConnectable={false}
       />
       <Handle
-        type="source"
+        id="center-in"
+        type="target"
         position={Position.Top}
-        id="source"
-        className="kg-node-handle"
-        style={handleStyle}
+        style={centerHandleStyle}
         isConnectable={false}
       />
       <div

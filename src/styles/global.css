@@ -121,17 +121,6 @@ body {
 }
 
 /* Mind Map — Obsidian-style circular graph */
-.mindmap .react-flow__handle.kg-node-handle {
-  opacity: 0;
-  width: 1px;
-  height: 1px;
-  min-width: 0;
-  min-height: 0;
-  border: none;
-  background: transparent;
-  pointer-events: none;
-}
-
 .mindmap .kg-node {
   position: relative;
   display: flex;
@@ -181,15 +170,22 @@ body {
   opacity: 1;
 }
 
+.mindmap .react-flow__edges svg.mindmap-links {
+  overflow: visible;
+  position: absolute;
+  pointer-events: none;
+}
+
 .mindmap .react-flow__node {
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
   padding: 0 !important;
+  z-index: 1;
 }
 
-.mindmap .react-flow__edge-path {
-  stroke-linecap: round;
+.mindmap .mindmap-links {
+  z-index: 0;
 }
 
 .mindmap .react-flow__controls button {

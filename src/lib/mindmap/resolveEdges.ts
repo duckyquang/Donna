@@ -1,12 +1,6 @@
 import type { KgEdge, KgGraph } from "../api";
 
-/**
- * Use stored edges when present. Otherwise link nodes in the same group so the
- * map still shows connections (e.g. two People nodes with no explicit edge yet).
- */
-export function resolveGraphEdges(graph: KgGraph): KgEdge[] {
-  if (graph.edges.length > 0) return graph.edges;
-
+function inferGroupEdges(graph: KgGraph): KgEdge[] {
   const byGroup = new Map<string, string[]>();
   for (const n of graph.nodes) {
     const g = n.group || "Topics";
@@ -23,4 +17,15 @@ export function resolveGraphEdges(graph: KgGraph): KgEdge[] {
     }
   }
   return inferred;
+}
+
+/**
+ * Prefer stored edges that reference existing nodes. If none remain, link nodes
+ * in the same group so the map still shows connections.
+ */
+export function resolveGraphEdges(graph: KgGraph): KgEdge[] {
+  const ids = new Set(graph.nodes.map((n) => n.id));
+  const stored = graph.edges.filter((e) => ids.has(e.source) && ids.has(e.target));
+  if (stored.length > 0) return stored;
+  return inferGroupEdges(graph);
 }

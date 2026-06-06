@@ -4,25 +4,21 @@ import {
   Background,
   Controls,
   useNodesState,
-  useEdgesState,
   type Node,
-  type Edge,
   type NodeMouseHandler,
   type NodeTypes,
-  type EdgeTypes,
   type OnNodeDrag,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { RefreshCw, X } from "lucide-react";
 import { KgCircleNode, type KgCircleNodeData } from "../components/mindmap/KgCircleNode";
-import { KgColoredEdge } from "../components/mindmap/KgColoredEdge";
-import { api, type KgGraph, type KgNode } from "../lib/api";
+import { MindMapGraphLinks } from "../components/mindmap/MindMapGraphLinks";
+import { api, type KgGraph, type KgEdge, type KgNode } from "../lib/api";
 import { ForceSim, connectionCount, forceLayout } from "../lib/mindmap/forceLayout";
 import { resolveGraphEdges } from "../lib/mindmap/resolveEdges";
 import { Spinner } from "../components/ui";
 
 const nodeTypes: NodeTypes = { kgCircle: KgCircleNode };
-const edgeTypes: EdgeTypes = { kgColored: KgColoredEdge };
 
 const GROUP_COLORS: Record<string, string> = {
   People: "#e8a55a",
@@ -41,7 +37,7 @@ function colorFor(group: string): string {
   return `hsl(${Math.abs(hash) % 360} 55% 55%)`;
 }
 
-function nodeSize(id: string, edges: KgGraph["edges"]): number {
+function nodeSize(id: string, edges: KgEdge[]): number {
   const links = connectionCount(id, edges);
   return 10 + Math.min(links, 10) * 1.8;
 }
@@ -50,60 +46,31 @@ function centerToPosition(cx: number, cy: number, size: number) {
   return { x: cx - size / 2, y: cy - size / 2 };
 }
 
-function nodeCenter(node: Node): { x: number; y: number; size: number } {
-  const size = (node.data as KgCircleNodeData).size ?? node.width ?? 12;
-  return {
-    size,
-    x: node.position.x + size / 2,
-    y: node.position.y + size / 2,
-  };
-}
-
-function buildFlowElements(
+function buildFlowNodes(
   graph: KgGraph,
-  resolvedEdges: KgGraph["edges"],
+  resolvedEdges: KgEdge[],
   positions: Map<string, { x: number; y: number }>
-): { nodes: Node[]; edges: Edge[] } {
-  const ids = new Set(graph.nodes.map((n) => n.id));
-  const nodeColor = new Map(
-    graph.nodes.map((n) => [n.id, colorFor(n.group || "Topics")])
-  );
-
-  const nodes: Node[] = graph.nodes.map((m) => {
+): Node[] {
+  return graph.nodes.map((m) => {
     const size = nodeSize(m.id, resolvedEdges);
     const pos = positions.get(m.id) ?? { x: 0, y: 0 };
     return {
       id: m.id,
       type: "kgCircle",
       position: centerToPosition(pos.x, pos.y, size),
+      initialWidth: size,
+      initialHeight: size,
       width: size,
       height: size,
       data: {
         label: m.label,
         color: colorFor(m.group || "Topics"),
         size,
-      },
+      } satisfies KgCircleNodeData,
       draggable: true,
       selectable: true,
     };
   });
-
-  const edges: Edge[] = resolvedEdges
-    .filter((e) => ids.has(e.source) && ids.has(e.target))
-    .map((e, i) => ({
-      id: `edge-${i}-${e.source}-${e.target}`,
-      source: e.source,
-      target: e.target,
-      sourceHandle: "source",
-      targetHandle: "target",
-      type: "kgColored",
-      data: {
-        sourceColor: nodeColor.get(e.source),
-        targetColor: nodeColor.get(e.target),
-      },
-    }));
-
-  return { nodes, edges };
 }
 
 function applySimPositions(nodes: Node[], sim: ForceSim): Node[] {
@@ -120,9 +87,18 @@ export default function MindMap() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<KgNode | null>(null);
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
-  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const simRef = useRef<ForceSim | null>(null);
   const didDragRef = useRef(false);
+
+  const resolvedEdges = useMemo(
+    () => (graph.nodes.length > 0 ? resolveGraphEdges(graph) : []),
+    [graph]
+  );
+
+  const nodeColorById = useMemo(
+    () => new Map(graph.nodes.map((n) => [n.id, colorFor(n.group || "Topics")])),
+    [graph.nodes]
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -140,21 +116,17 @@ export default function MindMap() {
   useEffect(() => {
     if (graph.nodes.length === 0) {
       setRfNodes([]);
-      setRfEdges([]);
       simRef.current = null;
       return;
     }
-    const resolvedEdges = resolveGraphEdges(graph);
     const layout = forceLayout(graph.nodes, resolvedEdges);
     simRef.current = ForceSim.fromLayout(
       graph.nodes.map((n) => n.id),
       resolvedEdges,
       layout
     );
-    const { nodes, edges } = buildFlowElements(graph, resolvedEdges, layout);
-    setRfNodes(nodes);
-    setRfEdges(edges);
-  }, [graph, setRfNodes, setRfEdges]);
+    setRfNodes(buildFlowNodes(graph, resolvedEdges, layout));
+  }, [graph, resolvedEdges, setRfNodes]);
 
   const nodeById = useMemo(
     () => new Map(graph.nodes.map((n) => [n.id, n])),
@@ -170,9 +142,11 @@ export default function MindMap() {
     const sim = simRef.current;
     if (!sim) return;
 
-    const { x, y } = nodeCenter(node);
+    const size = (node.data as KgCircleNodeData).size;
+    const cx = node.position.x + size / 2;
+    const cy = node.position.y + size / 2;
     for (let i = 0; i < 5; i++) {
-      sim.tick({ id: node.id, x, y });
+      sim.tick({ id: node.id, x: cx, y: cy });
     }
 
     setRfNodes((nds) => applySimPositions(nds, sim));
@@ -182,9 +156,11 @@ export default function MindMap() {
     const sim = simRef.current;
     if (!sim) return;
 
-    const { x, y } = nodeCenter(node);
+    const size = (node.data as KgCircleNodeData).size;
+    const cx = node.position.x + size / 2;
+    const cy = node.position.y + size / 2;
     for (let i = 0; i < 12; i++) {
-      sim.tick({ id: node.id, x, y }, 0.6);
+      sim.tick({ id: node.id, x: cx, y: cy }, 0.6);
     }
     setRfNodes((nds) => applySimPositions(nds, sim));
   };
@@ -251,11 +227,9 @@ export default function MindMap() {
         <div className="mindmap h-full w-full">
           <ReactFlow
             nodes={rfNodes}
-            edges={rfEdges}
+            edges={[]}
             onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
             nodeTypes={nodeTypes}
-            edgeTypes={edgeTypes}
             onNodeClick={onNodeClick}
             onNodeDragStart={onNodeDragStart}
             onNodeDrag={onNodeDrag}
@@ -272,6 +246,10 @@ export default function MindMap() {
             minZoom={0.15}
             maxZoom={2.5}
           >
+            <MindMapGraphLinks
+              edges={resolvedEdges}
+              colorForNode={(id) => nodeColorById.get(id) ?? "#e8a55a"}
+            />
             <Background color="#ffffff08" gap={32} />
             <Controls showInteractive={false} />
           </ReactFlow>

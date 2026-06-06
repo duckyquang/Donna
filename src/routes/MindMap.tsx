@@ -94,6 +94,8 @@ function buildFlowElements(
       id: `edge-${i}-${e.source}-${e.target}`,
       source: e.source,
       target: e.target,
+      sourceHandle: "source",
+      targetHandle: "target",
       type: "kgColored",
       data: {
         sourceColor: nodeColor.get(e.source),

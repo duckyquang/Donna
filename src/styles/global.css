@@ -130,9 +130,6 @@ body {
   border: none;
   background: transparent;
   pointer-events: none;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
 }
 
 .mindmap .kg-node {
@@ -193,18 +190,6 @@ body {
 
 .mindmap .react-flow__edge-path {
   stroke-linecap: round;
-}
-
-.mindmap .kg-colored-edge path {
-  pointer-events: none;
-}
-
-.mindmap .react-flow__edges {
-  z-index: 1;
-}
-
-.mindmap .react-flow__nodes {
-  z-index: 2;
 }
 
 .mindmap .react-flow__controls button {

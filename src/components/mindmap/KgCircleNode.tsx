@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, type CSSProperties } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 
 export type KgCircleNodeData = {
@@ -9,7 +9,7 @@ export type KgCircleNodeData = {
 
 function KgCircleNodeComponent({ data, selected }: NodeProps) {
   const d = data as KgCircleNodeData;
-  const handleStyle = {
+  const handleStyle: CSSProperties = {
     opacity: 0,
     width: 1,
     height: 1,
@@ -17,8 +17,8 @@ function KgCircleNodeComponent({ data, selected }: NodeProps) {
     minHeight: 0,
     border: "none",
     background: "transparent",
-    top: d.size / 2,
-    left: d.size / 2,
+    top: "50%",
+    left: "50%",
     transform: "translate(-50%, -50%)",
   };
 
@@ -34,7 +34,7 @@ function KgCircleNodeComponent({ data, selected }: NodeProps) {
       />
       <Handle
         type="source"
-        position={Position.Bottom}
+        position={Position.Top}
         id="source"
         className="kg-node-handle"
         style={handleStyle}

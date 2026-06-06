@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Send } from "lucide-react";
 import type { DonnaQuestion as Q } from "../lib/donnaQuestions";
-import { Spinner } from "./ui";
+import { ThinkingDots } from "./ui";
 
 interface DonnaQuestionProps {
   question: Q;
@@ -13,7 +13,7 @@ interface DonnaQuestionProps {
 export function DonnaQuestionPending() {
   return (
     <div className="mt-3 flex items-center gap-2 rounded-xl border border-white/10 bg-donna-bg/50 px-4 py-3">
-      <Spinner />
+      <ThinkingDots />
       <span className="text-xs text-gray-500">Preparing a question…</span>
     </div>
   );

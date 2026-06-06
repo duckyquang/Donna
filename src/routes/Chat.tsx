@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, Send, Trash2 } from "lucide-react";
 import { api, type Conversation, type Message } from "../lib/api";
 import { useConfig } from "../lib/useConfig";
-import { Spinner } from "../components/ui";
+import { Spinner, ThinkingDots } from "../components/ui";
 import { DonnaMessage } from "../components/DonnaMessage";
 import { hasDonnaQuestions } from "../lib/donnaQuestions";
 
@@ -237,7 +237,7 @@ function StreamingPlaceholder() {
   return (
     <div className="flex justify-start">
       <div className="rounded-2xl border border-white/10 bg-donna-surface px-4 py-3">
-        <Spinner />
+        <ThinkingDots />
       </div>
     </div>
   );

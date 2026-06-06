@@ -196,3 +196,20 @@ body {
 .mindmap .react-flow__controls button:hover {
   background: var(--donna-surface-raised, #1e1a16);
 }
+
+@keyframes thinking-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  30% {
+    transform: translateY(-6px);
+    opacity: 1;
+  }
+}
+
+.thinking-dot {
+  animation: thinking-bounce 1.2s ease-in-out infinite;
+}

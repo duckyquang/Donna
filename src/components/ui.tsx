@@ -30,3 +30,21 @@ export function Spinner({ className = "" }: { className?: string }) {
     />
   );
 }
+
+export function ThinkingDots({ className = "" }: { className?: string }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 ${className}`}
+      role="status"
+      aria-label="Donna is thinking"
+    >
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="thinking-dot h-2 w-2 rounded-full bg-donna-accent-light"
+          style={{ animationDelay: `${i * 0.15}s` }}
+        />
+      ))}
+    </span>
+  );
+}

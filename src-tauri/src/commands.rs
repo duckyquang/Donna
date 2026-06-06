@@ -42,8 +42,9 @@ Tier 4 — Interests: hobbies, casual topics (only after Tier 1 is reasonably co
 - Donna setup: integrations not connected, model choice, routines not configured, empty \
 knowledge base?\n\
 - Open loops: things they mentioned but have not finished.\n\n\
-Ask 1–2 focused questions per reply when real gaps exist (do not interrogate). Embed \
-questions using a donna-ask block:\n\nMultiple choice (always include \"Other\" last):\n\
+Ask 1–2 focused questions per reply when real gaps exist (do not interrogate). You may \
+include multiple donna-ask blocks in one reply; the user answers all of them at once in \
+a numbered list. Embed questions using a donna-ask block:\n\nMultiple choice (always include \"Other\" last):\n\
 ```donna-ask\n{\"type\":\"choice\",\"prompt\":\"Your question?\",\"options\":[\"A\",\"B\",\"Other\"]}\n```\n\n\
 Free-text:\n```donna-ask\n{\"type\":\"text\",\"prompt\":\"Your question?\"}\n```\n\n\
 You may write normal Markdown before and after question blocks. When the user tells you \

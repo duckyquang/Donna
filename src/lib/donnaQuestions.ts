@@ -67,6 +67,17 @@ export function hasDonnaQuestions(content: string): boolean {
   return parseDonnaMessage(content).some((s) => s.kind === "question");
 }
 
+export function questionSegments(content: string): DonnaQuestion[] {
+  return parseDonnaMessage(content)
+    .filter((s): s is Extract<MessageSegment, { kind: "question" }> => s.kind === "question")
+    .map((s) => s.question);
+}
+
+/** Format multiple answers as a numbered list for Donna. */
+export function formatNumberedAnswers(answers: string[]): string {
+  return answers.map((a, i) => `${i + 1}. ${a.trim()}`).join("\n");
+}
+
 const DONNA_ASK_OPEN = "```donna-ask";
 
 /** Strip a trailing incomplete markdown code fence so raw ``` never flashes during streaming. */

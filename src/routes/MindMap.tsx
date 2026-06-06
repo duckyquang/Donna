@@ -19,12 +19,7 @@ import { NodeDetailPanel } from "../components/mindmap/NodeDetailPanel";
 import { NodeEditor } from "../components/mindmap/NodeEditor";
 import { api, type KgGraph, type KgEdge, type KgNode } from "../lib/api";
 import { useConfig } from "../lib/useConfig";
-import {
-  ForceSim,
-  connectionCount,
-  forceLayout,
-  type LayoutNode,
-} from "../lib/mindmap/forceLayout";
+import { ForceSim, connectionCount, forceLayout } from "../lib/mindmap/forceLayout";
 import { resolveGraphEdges } from "../lib/mindmap/resolveEdges";
 import { Spinner } from "../components/ui";
 
@@ -53,18 +48,6 @@ function filterByCategory(graph: KgGraph, category: string): KgGraph {
   const ids = new Set(nodes.map((n) => n.id));
   const edges = graph.edges.filter((e) => ids.has(e.source) && ids.has(e.target));
   return { nodes, edges };
-}
-
-function toLayoutNodes(nodes: KgNode[], edges: KgEdge[]): LayoutNode[] {
-  return nodes.map((n) => {
-    const size = nodeSize(n, edges);
-    const diameter = n.type === "folder" ? Math.max(size, 22) : size;
-    return {
-      id: n.id,
-      group: nodeCategory(n),
-      radius: diameter / 2 + 10,
-    };
-  });
 }
 
 function colorFor(group: string): string {
@@ -219,9 +202,9 @@ export default function MindMap() {
       simRef.current = null;
       return;
     }
-    const layoutNodes = toLayoutNodes(filteredGraph.nodes, resolvedEdges);
-    const layout = forceLayout(layoutNodes, resolvedEdges);
-    simRef.current = ForceSim.fromLayout(layoutNodes, resolvedEdges, layout);
+    const layout = forceLayout(filteredGraph.nodes, resolvedEdges);
+    const nodeIds = filteredGraph.nodes.map((n) => n.id);
+    simRef.current = ForceSim.fromLayout(nodeIds, resolvedEdges, layout);
     setRfNodes(buildFlowNodes(filteredGraph, resolvedEdges, layout));
   }, [filteredGraph, resolvedEdges, setRfNodes]);
 

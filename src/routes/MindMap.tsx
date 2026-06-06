@@ -7,15 +7,18 @@ import {
   type Edge,
   type NodeMouseHandler,
   type NodeTypes,
+  type EdgeTypes,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { RefreshCw, X } from "lucide-react";
 import { KgCircleNode } from "../components/mindmap/KgCircleNode";
+import { KgColoredEdge } from "../components/mindmap/KgColoredEdge";
 import { api, type KgGraph, type KgNode } from "../lib/api";
 import { connectionCount, forceLayout } from "../lib/mindmap/forceLayout";
 import { Spinner } from "../components/ui";
 
 const nodeTypes: NodeTypes = { kgCircle: KgCircleNode };
+const edgeTypes: EdgeTypes = { kgColored: KgColoredEdge };
 
 const GROUP_COLORS: Record<string, string> = {
   People: "#e8a55a",
@@ -42,6 +45,9 @@ function nodeSize(id: string, edges: KgGraph["edges"]): number {
 function buildGraphLayout(graph: KgGraph): { nodes: Node[]; edges: Edge[] } {
   const positions = forceLayout(graph.nodes, graph.edges);
   const ids = new Set(graph.nodes.map((n) => n.id));
+  const nodeColor = new Map(
+    graph.nodes.map((n) => [n.id, colorFor(n.group || "Topics")])
+  );
 
   const nodes: Node[] = graph.nodes.map((m) => {
     const size = nodeSize(m.id, graph.edges);
@@ -66,8 +72,11 @@ function buildGraphLayout(graph: KgGraph): { nodes: Node[]; edges: Edge[] } {
       id: `${e.source}->${e.target}`,
       source: e.source,
       target: e.target,
-      type: "straight",
-      style: { stroke: "#ffffff28", strokeWidth: 1 },
+      type: "kgColored",
+      data: {
+        sourceColor: nodeColor.get(e.source),
+        targetColor: nodeColor.get(e.target),
+      },
     }));
 
   return { nodes, edges };
@@ -160,6 +169,7 @@ export default function MindMap() {
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             onNodeClick={onNodeClick}
             onPaneClick={onPaneClick}
             nodesConnectable={false}

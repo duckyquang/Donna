@@ -136,9 +136,10 @@ body {
 }
 
 .mindmap .kg-node {
+  position: relative;
   display: flex;
-  flex-direction: column;
   align-items: center;
+  justify-content: center;
   cursor: pointer;
 }
 
@@ -158,6 +159,10 @@ body {
 }
 
 .mindmap .kg-node-label {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
   margin-top: 4px;
   max-width: 88px;
   overflow: hidden;
@@ -184,6 +189,18 @@ body {
 
 .mindmap .react-flow__edge-path {
   stroke-linecap: round;
+}
+
+.mindmap .kg-colored-edge path {
+  pointer-events: none;
+}
+
+.mindmap .react-flow__edges {
+  z-index: 1;
+}
+
+.mindmap .react-flow__nodes {
+  z-index: 2;
 }
 
 .mindmap .react-flow__controls button {

@@ -15,6 +15,7 @@ import { KgCircleNode } from "../components/mindmap/KgCircleNode";
 import { KgColoredEdge } from "../components/mindmap/KgColoredEdge";
 import { api, type KgGraph, type KgNode } from "../lib/api";
 import { connectionCount, forceLayout } from "../lib/mindmap/forceLayout";
+import { resolveGraphEdges } from "../lib/mindmap/resolveEdges";
 import { Spinner } from "../components/ui";
 
 const nodeTypes: NodeTypes = { kgCircle: KgCircleNode };
@@ -43,19 +44,22 @@ function nodeSize(id: string, edges: KgGraph["edges"]): number {
 }
 
 function buildGraphLayout(graph: KgGraph): { nodes: Node[]; edges: Edge[] } {
-  const positions = forceLayout(graph.nodes, graph.edges);
+  const resolvedEdges = resolveGraphEdges(graph);
+  const positions = forceLayout(graph.nodes, resolvedEdges);
   const ids = new Set(graph.nodes.map((n) => n.id));
   const nodeColor = new Map(
     graph.nodes.map((n) => [n.id, colorFor(n.group || "Topics")])
   );
 
   const nodes: Node[] = graph.nodes.map((m) => {
-    const size = nodeSize(m.id, graph.edges);
+    const size = nodeSize(m.id, resolvedEdges);
     const pos = positions.get(m.id) ?? { x: 0, y: 0 };
     return {
       id: m.id,
       type: "kgCircle",
       position: { x: pos.x - size / 2, y: pos.y - size / 2 },
+      width: size,
+      height: size,
       data: {
         label: m.label,
         color: colorFor(m.group || "Topics"),
@@ -66,10 +70,10 @@ function buildGraphLayout(graph: KgGraph): { nodes: Node[]; edges: Edge[] } {
     };
   });
 
-  const edges: Edge[] = graph.edges
+  const edges: Edge[] = resolvedEdges
     .filter((e) => ids.has(e.source) && ids.has(e.target))
-    .map((e) => ({
-      id: `${e.source}->${e.target}`,
+    .map((e, i) => ({
+      id: `edge-${i}-${e.source}-${e.target}`,
       source: e.source,
       target: e.target,
       type: "kgColored",

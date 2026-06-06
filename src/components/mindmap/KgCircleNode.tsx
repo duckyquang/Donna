@@ -9,13 +9,35 @@ export type KgCircleNodeData = {
 
 function KgCircleNodeComponent({ data, selected }: NodeProps) {
   const d = data as KgCircleNodeData;
+  const handleStyle = {
+    opacity: 0,
+    width: 1,
+    height: 1,
+    minWidth: 0,
+    minHeight: 0,
+    border: "none",
+    background: "transparent",
+    top: d.size / 2,
+    left: d.size / 2,
+    transform: "translate(-50%, -50%)",
+  };
 
   return (
-    <div className="kg-node" title={d.label}>
+    <div className="kg-node" style={{ width: d.size, height: d.size }} title={d.label}>
       <Handle
         type="target"
         position={Position.Top}
+        id="target"
         className="kg-node-handle"
+        style={handleStyle}
+        isConnectable={false}
+      />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="source"
+        className="kg-node-handle"
+        style={handleStyle}
         isConnectable={false}
       />
       <div
@@ -28,12 +50,6 @@ function KgCircleNodeComponent({ data, selected }: NodeProps) {
         }}
       />
       <span className="kg-node-label">{d.label}</span>
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        className="kg-node-handle"
-        isConnectable={false}
-      />
     </div>
   );
 }

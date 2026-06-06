@@ -6,6 +6,10 @@ type KgColoredEdgeData = {
   targetColor: string;
 };
 
+function safeGradientId(id: string): string {
+  return `kg-edge-${id.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+}
+
 function KgColoredEdgeComponent({
   id,
   sourceX,
@@ -15,13 +19,13 @@ function KgColoredEdgeComponent({
   data,
 }: EdgeProps) {
   const d = (data ?? {}) as KgColoredEdgeData;
-  const sourceColor = d.sourceColor ?? "#ffffff40";
+  const sourceColor = d.sourceColor ?? "#e8a55a";
   const targetColor = d.targetColor ?? sourceColor;
   const [path] = getStraightPath({ sourceX, sourceY, targetX, targetY });
-  const gradientId = `kg-edge-${id}`;
+  const gradientId = safeGradientId(id);
 
   return (
-    <>
+    <g className="kg-colored-edge">
       <defs>
         <linearGradient
           id={gradientId}
@@ -31,8 +35,8 @@ function KgColoredEdgeComponent({
           x2={targetX}
           y2={targetY}
         >
-          <stop offset="0%" stopColor={sourceColor} stopOpacity={0.75} />
-          <stop offset="100%" stopColor={targetColor} stopOpacity={0.75} />
+          <stop offset="0%" stopColor={sourceColor} />
+          <stop offset="100%" stopColor={targetColor} />
         </linearGradient>
       </defs>
       <BaseEdge
@@ -40,11 +44,12 @@ function KgColoredEdgeComponent({
         path={path}
         style={{
           stroke: `url(#${gradientId})`,
-          strokeWidth: 1.5,
+          strokeWidth: 2.5,
+          strokeOpacity: 1,
           strokeLinecap: "round",
         }}
       />
-    </>
+    </g>
   );
 }
 

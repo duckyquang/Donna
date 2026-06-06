@@ -13,6 +13,7 @@ import "@xyflow/react/dist/style.css";
 import { Plus, RefreshCw, Trash2 } from "lucide-react";
 import { KgCircleNode, type KgCircleNodeData } from "../components/mindmap/KgCircleNode";
 import { MindMapGraphLinks } from "../components/mindmap/MindMapGraphLinks";
+import { NodeDetailPanel } from "../components/mindmap/NodeDetailPanel";
 import { NodeEditor } from "../components/mindmap/NodeEditor";
 import { api, type KgGraph, type KgEdge, type KgNode } from "../lib/api";
 import { ForceSim, connectionCount, forceLayout } from "../lib/mindmap/forceLayout";
@@ -88,6 +89,7 @@ export default function MindMap() {
   const [loading, setLoading] = useState(true);
   const [resetting, setResetting] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<KgNode | "new" | null>(null);
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
   const simRef = useRef<ForceSim | null>(null);
@@ -148,6 +150,14 @@ export default function MindMap() {
     [graph]
   );
 
+  const selectedNode = selectedId ? nodeById.get(selectedId) ?? null : null;
+
+  useEffect(() => {
+    if (selectedId && !nodeById.has(selectedId)) {
+      setSelectedId(null);
+    }
+  }, [selectedId, nodeById]);
+
   const onNodeDragStart: OnNodeDrag = () => {
     didDragRef.current = false;
   };
@@ -178,15 +188,28 @@ export default function MindMap() {
       sim.tick({ id: node.id, x: cx, y: cy }, 0.6);
     }
     setRfNodes((nds) => applySimPositions(nds, sim));
+
+    // Reset after drag so the next tap opens details instead of being blocked.
+    window.setTimeout(() => {
+      didDragRef.current = false;
+    }, 0);
   };
 
-  const onNodeClick: NodeMouseHandler = (_e, node) => {
+  const onNodeClick: NodeMouseHandler = (e, node) => {
+    e.stopPropagation();
     if (didDragRef.current) return;
-    const found = nodeById.get(node.id);
-    if (found) setEditing(found);
+    setSelectedId(node.id);
+    setEditing(null);
+    setRfNodes((nds) =>
+      nds.map((n) => ({ ...n, selected: n.id === node.id }))
+    );
   };
 
-  const onPaneClick = () => setEditing(null);
+  const onPaneClick = () => {
+    setSelectedId(null);
+    setEditing(null);
+    setRfNodes((nds) => nds.map((n) => ({ ...n, selected: false })));
+  };
 
   const groupsPresent = useMemo(
     () => [...new Set(graph.nodes.map((n) => n.group || "Topics"))].sort(),
@@ -200,7 +223,7 @@ export default function MindMap() {
           <h1 className="text-sm font-semibold text-white">Mind Map</h1>
           <p className="text-xs text-gray-500">
             Donna&apos;s living map of what she knows about you · {graph.nodes.length}{" "}
-            nodes · drag to rearrange · click for details
+            nodes · drag to rearrange · click a node to read its details
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -259,23 +282,26 @@ export default function MindMap() {
           </div>
         </div>
       ) : (
-        <div className="mindmap h-full w-full">
-          <ReactFlow
-            nodes={rfNodes}
-            edges={[]}
-            onNodesChange={onNodesChange}
-            nodeTypes={nodeTypes}
-            onNodeClick={onNodeClick}
-            onNodeDragStart={onNodeDragStart}
-            onNodeDrag={onNodeDrag}
-            onNodeDragStop={onNodeDragStop}
-            onPaneClick={onPaneClick}
-            nodesConnectable={false}
-            nodesDraggable
-            nodeDragThreshold={6}
-            panOnDrag
-            elementsSelectable
-            fitView
+        <div className="flex h-full w-full pt-[52px]">
+          <div className="mindmap min-w-0 flex-1">
+            <ReactFlow
+              nodes={rfNodes}
+              edges={[]}
+              onNodesChange={onNodesChange}
+              nodeTypes={nodeTypes}
+              onNodeClick={onNodeClick}
+              onNodeDragStart={onNodeDragStart}
+              onNodeDrag={onNodeDrag}
+              onNodeDragStop={onNodeDragStop}
+              onPaneClick={onPaneClick}
+              nodesConnectable={false}
+              nodesDraggable
+              nodeDragThreshold={8}
+              selectionOnDrag={false}
+              selectNodesOnDrag={false}
+              panOnDrag
+              elementsSelectable
+              fitView
             fitViewOptions={{ padding: 0.3 }}
             proOptions={{ hideAttribution: true }}
             minZoom={0.15}
@@ -287,7 +313,20 @@ export default function MindMap() {
             />
             <Background color="#ffffff08" gap={32} />
             <Controls showInteractive={false} />
-          </ReactFlow>
+            </ReactFlow>
+          </div>
+
+          {selectedNode && (
+            <NodeDetailPanel
+              node={selectedNode}
+              onClose={() => setSelectedId(null)}
+              onEdit={() => setEditing(selectedNode)}
+              onDeleted={() => {
+                setSelectedId(null);
+                load();
+              }}
+            />
+          )}
         </div>
       )}
 

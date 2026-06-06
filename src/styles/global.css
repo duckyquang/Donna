@@ -126,10 +126,14 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: grab;
+  cursor: pointer;
 }
 
 .mindmap .kg-node:active {
+  cursor: grabbing;
+}
+
+.mindmap .react-flow__node.dragging .kg-node {
   cursor: grabbing;
 }
 

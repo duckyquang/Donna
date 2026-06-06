@@ -8,43 +8,40 @@ export type KgCircleNodeData = {
   isFolder?: boolean;
 };
 
+function nodeGlow(color: string, selected: boolean, strong = false) {
+  const spread = strong ? 1.25 : 1;
+  if (selected) {
+    return `0 0 0 2px #fff, 0 0 ${12 * spread}px ${color}ee, 0 0 ${24 * spread}px ${color}bb, 0 0 ${40 * spread}px ${color}66`;
+  }
+  return `0 0 ${8 * spread}px ${color}dd, 0 0 ${16 * spread}px ${color}99, 0 0 ${28 * spread}px ${color}55`;
+}
+
 function KgCircleNodeComponent({ data, selected }: NodeProps) {
   const d = data as KgCircleNodeData;
-
-  if (d.isFolder) {
-    const s = Math.max(d.size, 22);
-    const glow = selected
-      ? `0 0 0 2px #fff, 0 0 14px ${d.color}cc, 0 0 28px ${d.color}88, 0 0 42px ${d.color}44`
-      : `0 0 10px ${d.color}aa, 0 0 22px ${d.color}66, 0 0 36px ${d.color}33`;
-    return (
-      <div className="kg-node kg-node--folder" style={{ width: s, height: s }} title={d.label}>
-        <div
-          className={`kg-node-folder-circle${selected ? " kg-node-folder-circle--selected" : ""}`}
-          style={{
-            width: s,
-            height: s,
-            borderColor: d.color,
-            backgroundColor: `${d.color}40`,
-            boxShadow: glow,
-          }}
-        />
-        <span className="kg-node-label kg-node-label--folder">{d.label}</span>
-      </div>
-    );
-  }
+  const s = d.isFolder ? Math.max(d.size, 22) : d.size;
+  const circleClass = d.isFolder
+    ? `kg-node-circle kg-node-circle--folder${selected ? " kg-node-circle--selected" : ""}`
+    : `kg-node-circle${selected ? " kg-node-circle--selected" : ""}`;
 
   return (
-    <div className="kg-node" style={{ width: d.size, height: d.size }} title={d.label}>
+    <div
+      className={d.isFolder ? "kg-node kg-node--folder" : "kg-node"}
+      style={{ width: s, height: s }}
+      title={d.label}
+    >
       <div
-        className={`kg-node-circle${selected ? " kg-node-circle--selected" : ""}`}
+        className={circleClass}
         style={{
-          width: d.size,
-          height: d.size,
+          width: s,
+          height: s,
           backgroundColor: d.color,
-          boxShadow: selected ? `0 0 0 2px #fff, 0 0 14px ${d.color}88` : undefined,
+          borderColor: "rgba(255, 255, 255, 0.28)",
+          boxShadow: nodeGlow(d.color, !!selected, d.isFolder),
         }}
       />
-      <span className="kg-node-label">{d.label}</span>
+      <span className={`kg-node-label${d.isFolder ? " kg-node-label--folder" : ""}`}>
+        {d.label}
+      </span>
     </div>
   );
 }

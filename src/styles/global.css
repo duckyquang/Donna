@@ -139,17 +139,21 @@ body {
 
 .mindmap .kg-node-circle {
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  transition: box-shadow 0.15s ease, transform 0.15s ease;
+  border: 1.5px solid rgba(255, 255, 255, 0.22);
+  transition: box-shadow 0.2s ease, transform 0.15s ease;
+}
+
+.mindmap .kg-node-circle--folder {
+  border-width: 2px;
 }
 
 .mindmap .kg-node:hover .kg-node-circle {
-  transform: scale(1.15);
-  border-color: rgba(255, 255, 255, 0.35);
+  transform: scale(1.12);
+  border-color: rgba(255, 255, 255, 0.4);
 }
 
 .mindmap .kg-node-circle--selected {
-  transform: scale(1.2);
+  transform: scale(1.18);
 }
 
 .mindmap .kg-node-label {
@@ -174,20 +178,6 @@ body {
   max-width: 120px;
   font-size: 9px;
   font-weight: 500;
-}
-
-.mindmap .kg-node-folder-circle {
-  border-radius: 50%;
-  border: 2px solid;
-  transition: box-shadow 0.2s ease, transform 0.15s ease;
-}
-
-.mindmap .kg-node--folder:hover .kg-node-folder-circle {
-  transform: scale(1.12);
-}
-
-.mindmap .kg-node-folder-circle--selected {
-  transform: scale(1.18);
 }
 
 .mindmap .kg-node:hover .kg-node-label,

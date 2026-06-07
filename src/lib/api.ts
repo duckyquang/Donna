@@ -16,6 +16,7 @@ export interface AppConfig {
   onboarded: boolean;
   profileOnboarded: boolean;
   autonomyLevel: AutonomyLevel;
+  embedModel: string;
 }
 
 export interface Routine {
@@ -52,6 +53,46 @@ export interface GmailMessage {
   from: string;
   snippet: string;
   date: string;
+}
+
+export interface DriveFile {
+  id: string;
+  name: string;
+  mimeType: string | null;
+  modifiedTime: string | null;
+  webViewLink: string | null;
+}
+
+export interface GitHubRepo {
+  id: number;
+  name: string;
+  fullName: string;
+  private: boolean;
+  htmlUrl: string;
+}
+
+export interface GitHubIssue {
+  id: number;
+  number: number;
+  title: string;
+  state: string;
+  htmlUrl: string;
+  repo: string;
+}
+
+export interface LinearIssue {
+  id: string;
+  identifier: string;
+  title: string;
+  state: string;
+  url: string;
+}
+
+export interface NotionPage {
+  id: string;
+  title: string;
+  url: string;
+  lastEdited: string | null;
 }
 
 export interface BasicFieldStatus {
@@ -184,6 +225,7 @@ interface RawConfig {
   onboarded: boolean;
   profile_onboarded: boolean;
   autonomy_level?: AutonomyLevel;
+  embed_model?: string;
 }
 
 interface RawRoutine {
@@ -220,6 +262,38 @@ interface RawGmailMessage {
   from: string;
   snippet: string;
   date: string;
+}
+
+interface RawDriveFile {
+  id: string;
+  name: string;
+  mime_type: string | null;
+  modified_time: string | null;
+  web_view_link: string | null;
+}
+
+interface RawGitHubRepo {
+  id: number;
+  name: string;
+  full_name: string;
+  private: boolean;
+  html_url: string;
+}
+
+interface RawGitHubIssue {
+  id: number;
+  number: number;
+  title: string;
+  state: string;
+  html_url: string;
+  repo: string;
+}
+
+interface RawNotionPage {
+  id: string;
+  title: string;
+  url: string;
+  last_edited: string | null;
 }
 
 function toRoutine(r: RawRoutine): Routine {
@@ -265,6 +339,16 @@ function toGmailMessage(m: RawGmailMessage): GmailMessage {
     date: m.date,
   };
 }
+
+function toDriveFile(f: RawDriveFile): DriveFile {
+  return {
+    id: f.id,
+    name: f.name,
+    mimeType: f.mime_type,
+    modifiedTime: f.modified_time,
+    webViewLink: f.web_view_link,
+  };
+}
 interface RawBasicFieldStatus {
   id: string;
   label: string;
@@ -294,6 +378,7 @@ export const api = {
       onboarded: c.onboarded,
       profileOnboarded: c.profile_onboarded ?? false,
       autonomyLevel: c.autonomy_level ?? "confirm",
+      embedModel: c.embed_model ?? "nomic-embed-text",
     };
   },
 
@@ -306,6 +391,7 @@ export const api = {
         onboarded: config.onboarded,
         profile_onboarded: config.profileOnboarded,
         autonomy_level: config.autonomyLevel,
+        embed_model: config.embedModel,
       },
     });
   },
@@ -572,13 +658,105 @@ export const api = {
     return invoke("delete_doc", { id: Number(id) });
   },
 
-  // --- Gmail ---
+  // --- Gmail & Drive ---
   async gmailListMessages(maxResults = 10): Promise<GmailMessage[]> {
     const rows = await invoke<RawGmailMessage[]>("gmail_list_messages", { maxResults });
     return rows.map(toGmailMessage);
   },
 
+  gmailCreateDraft(to: string, subject: string, body: string): Promise<string> {
+    return invoke("gmail_create_draft", { to, subject, body });
+  },
+
+  async driveListFiles(maxResults = 10): Promise<DriveFile[]> {
+    const rows = await invoke<RawDriveFile[]>("drive_list_files", { maxResults });
+    return rows.map(toDriveFile);
+  },
+
   googleCreateDoc(title: string): Promise<string> {
     return invoke("google_create_doc", { title });
+  },
+
+  // --- GitHub ---
+  githubSetToken(token: string): Promise<void> {
+    return invoke("github_set_token", { token });
+  },
+  githubDisconnect(): Promise<void> {
+    return invoke("github_disconnect");
+  },
+  async githubListRepos(maxResults = 10): Promise<GitHubRepo[]> {
+    const rows = await invoke<RawGitHubRepo[]>("github_list_repos", { maxResults });
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      fullName: r.full_name,
+      private: r.private,
+      htmlUrl: r.html_url,
+    }));
+  },
+  async githubListIssues(maxResults = 10): Promise<GitHubIssue[]> {
+    const rows = await invoke<RawGitHubIssue[]>("github_list_issues", { maxResults });
+    return rows.map((i) => ({
+      id: i.id,
+      number: i.number,
+      title: i.title,
+      state: i.state,
+      htmlUrl: i.html_url,
+      repo: i.repo,
+    }));
+  },
+
+  // --- Linear ---
+  linearSetKey(key: string): Promise<void> {
+    return invoke("linear_set_key", { key });
+  },
+  linearDisconnect(): Promise<void> {
+    return invoke("linear_disconnect");
+  },
+  async linearListIssues(maxResults = 10): Promise<LinearIssue[]> {
+    return invoke<LinearIssue[]>("linear_list_issues", { maxResults });
+  },
+
+  // --- Notion ---
+  notionSetToken(token: string): Promise<void> {
+    return invoke("notion_set_token", { token });
+  },
+  notionDisconnect(): Promise<void> {
+    return invoke("notion_disconnect");
+  },
+  async notionSearchPages(maxResults = 10): Promise<NotionPage[]> {
+    const rows = await invoke<RawNotionPage[]>("notion_search_pages", { maxResults });
+    return rows.map((p) => ({
+      id: p.id,
+      title: p.title,
+      url: p.url,
+      lastEdited: p.last_edited,
+    }));
+  },
+
+  // --- Telegram ---
+  telegramSetCredentials(botToken: string, chatId: string): Promise<void> {
+    return invoke("telegram_set_credentials", { botToken, chatId });
+  },
+  telegramDisconnect(): Promise<void> {
+    return invoke("telegram_disconnect");
+  },
+  telegramSendMessage(text: string): Promise<void> {
+    return invoke("telegram_send_message", { text });
+  },
+
+  // --- WhatsApp ---
+  whatsappSetCredentials(accessToken: string, phoneNumberId: string): Promise<void> {
+    return invoke("whatsapp_set_credentials", { accessToken, phoneNumberId });
+  },
+  whatsappDisconnect(): Promise<void> {
+    return invoke("whatsapp_disconnect");
+  },
+  whatsappSendMessage(to: string, text: string): Promise<void> {
+    return invoke("whatsapp_send_message", { to, text });
+  },
+
+  kgReindexEmbeddings(): Promise<number> {
+    return invoke("kg_reindex_embeddings");
   },
 };

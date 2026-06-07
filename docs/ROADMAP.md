@@ -50,10 +50,8 @@ for the full architecture and design rationale behind each item.
 - [x] Folder-based knowledge base — nested paths, Donna-curated after each chat
 - [x] Interactive donna-ask questions with batch numbered answers
 - [x] Profile onboarding wizard on first conversation
-- [ ] Embedding-based retrieval (Ollama/local embeddings) — keyword retrieval shipped first
-
-## Ongoing
-- [ ] More integrations (Notion, Telegram, GitHub, Linear, WhatsApp, …)
-- [ ] Cross-platform packaged installers (macOS, Windows, Linux)
-- [ ] Docs site and contributor guides
-- [ ] Full Gmail compose/draft and Drive file management UI
+- [x] Embedding-based retrieval (Ollama/local embeddings) — hybrid keyword + cosine similarity
+- [x] More integrations (Notion, Telegram, GitHub, Linear, WhatsApp)
+- [x] Cross-platform packaged installers (macOS, Windows, Linux) — CI on version tags
+- [x] Docs site and contributor guides — see `docs/`
+- [x] Full Gmail compose/draft and Drive file management UI

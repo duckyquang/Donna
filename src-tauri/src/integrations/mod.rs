@@ -1,11 +1,16 @@
 //! Integration connectors: how Donna reaches the user's external tools.
 //!
 //! Each connector owns its auth (OAuth tokens or API keys, stored in the OS keychain)
-//! and the actions Donna can take. Phase 2 ships Google (Calendar), Slack, and Fathom.
+//! and the actions Donna can take.
 
 pub mod fathom;
+pub mod github;
 pub mod google;
+pub mod linear;
+pub mod notion;
 pub mod slack;
+pub mod telegram;
+pub mod whatsapp;
 
 use serde::Serialize;
 
@@ -40,6 +45,36 @@ pub fn status() -> Result<Vec<IntegrationStatus>> {
             id: "fathom".into(),
             name: "Fathom".into(),
             connected: fathom::is_connected()?,
+            needs_setup: false,
+        },
+        IntegrationStatus {
+            id: "github".into(),
+            name: "GitHub".into(),
+            connected: github::is_connected()?,
+            needs_setup: false,
+        },
+        IntegrationStatus {
+            id: "linear".into(),
+            name: "Linear".into(),
+            connected: linear::is_connected()?,
+            needs_setup: false,
+        },
+        IntegrationStatus {
+            id: "notion".into(),
+            name: "Notion".into(),
+            connected: notion::is_connected()?,
+            needs_setup: false,
+        },
+        IntegrationStatus {
+            id: "telegram".into(),
+            name: "Telegram".into(),
+            connected: telegram::is_connected()?,
+            needs_setup: false,
+        },
+        IntegrationStatus {
+            id: "whatsapp".into(),
+            name: "WhatsApp".into(),
+            connected: whatsapp::is_connected()?,
             needs_setup: false,
         },
     ])

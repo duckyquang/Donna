@@ -196,6 +196,32 @@ async fn stream_ollama(
     Ok(())
 }
 
+/// Generate an embedding vector via Ollama's `/api/embeddings` endpoint.
+pub async fn embed_ollama(host: &str, model: &str, text: &str) -> Result<Vec<f32>> {
+    if model.is_empty() || text.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let url = format!("{}/api/embeddings", host.trim_end_matches('/'));
+    let body = serde_json::json!({ "model": model, "prompt": text });
+    let resp = http_client().post(url).json(&body).send().await?;
+    if !resp.status().is_success() {
+        return Err(Error::Provider(format!(
+            "Ollama embeddings error ({}). Is {} pulled?",
+            resp.status(),
+            model
+        )));
+    }
+    let v: serde_json::Value = resp.json().await?;
+    let embedding = v
+        .get("embedding")
+        .and_then(|e| e.as_array())
+        .ok_or_else(|| Error::Provider("unexpected Ollama embeddings response".into()))?;
+    Ok(embedding
+        .iter()
+        .filter_map(|n| n.as_f64().map(|f| f as f32))
+        .collect())
+}
+
 // --- OpenAI -----------------------------------------------------------------
 
 #[derive(Deserialize)]

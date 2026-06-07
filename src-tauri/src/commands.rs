@@ -8,8 +8,9 @@ use tauri::ipc::Channel;
 use tauri::State;
 
 use crate::db::{Conversation, Db, Doc, Message, Notification, Routine};
+use crate::embeddings;
 use crate::error::{Error, Result};
-use crate::integrations::{self, google, slack};
+use crate::integrations::{self, github, google, linear, notion, slack, telegram, whatsapp};
 use crate::knowledge;
 use crate::providers::{self, ChatTurn};
 use crate::retrieval;
@@ -52,7 +53,10 @@ You may write normal Markdown before and after question blocks. When the user te
 to remember something, acknowledge it clearly.";
 
 /// Assemble the full system prompt: persona + basics audit + live knowledge + setup status.
-fn build_system_prompt(config: &AppConfig, retrieval_query: Option<&str>) -> Result<String> {
+fn build_system_prompt(
+    config: &AppConfig,
+    retrieval_ctx: Option<&str>,
+) -> Result<String> {
     let basics = knowledge::basics_checklist_for_prompt()?;
     let known = knowledge::summary_for_prompt()?;
     let setup = build_setup_context(config)?;
@@ -61,11 +65,10 @@ fn build_system_prompt(config: &AppConfig, retrieval_query: Option<&str>) -> Res
         "{DONNA_SYSTEM_PROMPT}\n\n## Basics checklist\n{basics}\n\n## What Donna knows about this user\n{known}\n\n{setup}"
     );
 
-    if let Some(query) = retrieval_query {
-        let ctx = retrieval::search_for_prompt(query)?;
+    if let Some(ctx) = retrieval_ctx {
         if !ctx.is_empty() {
             prompt.push_str("\n\n## Relevant memories (retrieval)\n");
-            prompt.push_str(&ctx);
+            prompt.push_str(ctx);
         }
     }
 
@@ -123,6 +126,13 @@ pub struct AppConfig {
     /// confirm | act | autonomous
     #[serde(default = "default_autonomy_level")]
     pub autonomy_level: String,
+    /// Ollama embedding model for semantic memory retrieval.
+    #[serde(default = "default_embed_model")]
+    pub embed_model: String,
+}
+
+fn default_embed_model() -> String {
+    embeddings::DEFAULT_EMBED_MODEL.into()
 }
 
 fn default_autonomy_level() -> String {
@@ -141,6 +151,9 @@ fn load_config(db: &Db) -> Result<AppConfig> {
         autonomy_level: db
             .get_setting("autonomy_level")?
             .unwrap_or_else(|| "confirm".into()),
+        embed_model: db
+            .get_setting("embed_model")?
+            .unwrap_or_else(|| embeddings::DEFAULT_EMBED_MODEL.into()),
     })
 }
 
@@ -178,6 +191,7 @@ pub fn save_config(db: State<Db>, config: AppConfig) -> Result<()> {
         },
     )?;
     db.set_setting("autonomy_level", &config.autonomy_level)?;
+    db.set_setting("embed_model", &config.embed_model)?;
     if config.provider == "ollama" {
         spawn_ollama_warmup(config.ollama_host, config.model);
     }
@@ -348,8 +362,17 @@ pub async fn send_chat(
         .rev()
         .find(|m| m.role == "user")
         .map(|m| m.content);
-    let mut system_content =
-        build_system_prompt(&config, retrieval_query.as_deref())?;
+    let retrieval_ctx = if let Some(ref query) = retrieval_query {
+        let cfg = retrieval::RetrievalConfig {
+            provider: &config.provider,
+            ollama_host: &config.ollama_host,
+            embed_model: &config.embed_model,
+        };
+        retrieval::search_for_prompt(query, &db, &cfg).await?
+    } else {
+        String::new()
+    };
+    let mut system_content = build_system_prompt(&config, Some(&retrieval_ctx))?;
     let user_message_count = db
         .get_messages(conversation_id)?
         .iter()
@@ -501,12 +524,14 @@ pub fn kg_graph() -> Result<GraphResponse> {
 pub fn kg_reset(db: State<Db>) -> Result<()> {
     knowledge::reset()?;
     db.delete_all_conversations()?;
+    db.clear_embeddings()?;
     db.set_setting("profile_onboarded", "false")?;
     Ok(())
 }
 
 #[tauri::command]
-pub fn kg_save_node(
+pub async fn kg_save_node(
+    db: State<'_, Db>,
     folder: Vec<String>,
     label: String,
     note: String,
@@ -522,6 +547,16 @@ pub fn kg_save_node(
         from_folder.as_deref(),
         from_id.as_deref(),
     )?;
+    let config = load_config(&db)?;
+    if config.provider == "ollama" && !config.embed_model.is_empty() {
+        let _ = embeddings::index_node(
+            &db,
+            &config.ollama_host,
+            &config.embed_model,
+            &node,
+        )
+        .await;
+    }
     Ok(to_graph_node(node))
 }
 
@@ -640,6 +675,21 @@ pub async fn kg_extract(db: State<'_, Db>, conversation_id: i64) -> Result<usize
             }
 
             knowledge::save_node(&folder, label, note, node_type, None, None)?;
+            if config.provider == "ollama" && !config.embed_model.is_empty() {
+                if let Ok(graph) = knowledge::graph() {
+                    if let Some(node) = graph.nodes.iter().find(|n| {
+                        n.folder == folder && n.label.eq_ignore_ascii_case(label)
+                    }) {
+                        let _ = embeddings::index_node(
+                            &db,
+                            &config.ollama_host,
+                            &config.embed_model,
+                            node,
+                        )
+                        .await;
+                    }
+                }
+            }
             count += 1;
         }
     }
@@ -688,6 +738,15 @@ fn extract_json(text: &str) -> Option<serde_json::Value> {
         return None;
     }
     serde_json::from_str(&text[start..=end]).ok()
+}
+
+#[tauri::command]
+pub async fn kg_reindex_embeddings(db: State<'_, Db>) -> Result<usize> {
+    let config = load_config(&db)?;
+    if config.provider != "ollama" || config.embed_model.is_empty() {
+        return Ok(0);
+    }
+    embeddings::reindex_all(&db, &config.ollama_host, &config.embed_model).await
 }
 
 // --- Integrations ----------------------------------------------------------
@@ -851,4 +910,104 @@ pub async fn gmail_list_messages(max_results: u32) -> Result<Vec<google::GmailMe
 #[tauri::command]
 pub async fn google_create_doc(title: String) -> Result<String> {
     google::create_google_doc(&title).await
+}
+
+#[tauri::command]
+pub async fn gmail_create_draft(to: String, subject: String, body: String) -> Result<String> {
+    google::create_gmail_draft(&to, &subject, &body).await
+}
+
+#[tauri::command]
+pub async fn drive_list_files(max_results: u32) -> Result<Vec<google::DriveFile>> {
+    google::list_drive_files(max_results).await
+}
+
+// --- GitHub -----------------------------------------------------------------
+
+#[tauri::command]
+pub fn github_set_token(token: String) -> Result<()> {
+    github::set_token(&token)
+}
+
+#[tauri::command]
+pub fn github_disconnect() -> Result<()> {
+    github::disconnect()
+}
+
+#[tauri::command]
+pub async fn github_list_repos(max_results: u32) -> Result<Vec<github::GitHubRepo>> {
+    github::list_repos(max_results).await
+}
+
+#[tauri::command]
+pub async fn github_list_issues(max_results: u32) -> Result<Vec<github::GitHubIssue>> {
+    github::list_issues(max_results).await
+}
+
+// --- Linear -----------------------------------------------------------------
+
+#[tauri::command]
+pub fn linear_set_key(key: String) -> Result<()> {
+    linear::set_key(&key)
+}
+
+#[tauri::command]
+pub fn linear_disconnect() -> Result<()> {
+    linear::disconnect()
+}
+
+#[tauri::command]
+pub async fn linear_list_issues(max_results: u32) -> Result<Vec<linear::LinearIssue>> {
+    linear::list_issues(max_results).await
+}
+
+// --- Notion -----------------------------------------------------------------
+
+#[tauri::command]
+pub fn notion_set_token(token: String) -> Result<()> {
+    notion::set_token(&token)
+}
+
+#[tauri::command]
+pub fn notion_disconnect() -> Result<()> {
+    notion::disconnect()
+}
+
+#[tauri::command]
+pub async fn notion_search_pages(max_results: u32) -> Result<Vec<notion::NotionPage>> {
+    notion::search_pages(max_results).await
+}
+
+// --- Telegram ---------------------------------------------------------------
+
+#[tauri::command]
+pub fn telegram_set_credentials(bot_token: String, chat_id: String) -> Result<()> {
+    telegram::set_credentials(&bot_token, &chat_id)
+}
+
+#[tauri::command]
+pub fn telegram_disconnect() -> Result<()> {
+    telegram::disconnect()
+}
+
+#[tauri::command]
+pub async fn telegram_send_message(text: String) -> Result<()> {
+    telegram::send_message(&text).await
+}
+
+// --- WhatsApp ---------------------------------------------------------------
+
+#[tauri::command]
+pub fn whatsapp_set_credentials(access_token: String, phone_number_id: String) -> Result<()> {
+    whatsapp::set_credentials(&access_token, &phone_number_id)
+}
+
+#[tauri::command]
+pub fn whatsapp_disconnect() -> Result<()> {
+    whatsapp::disconnect()
+}
+
+#[tauri::command]
+pub async fn whatsapp_send_message(to: String, text: String) -> Result<()> {
+    whatsapp::send_message(&to, &text).await
 }

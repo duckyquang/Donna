@@ -459,6 +459,43 @@ impl Db {
         conn.execute("DELETE FROM docs WHERE id = ?1", [id])?;
         Ok(())
     }
+
+    // --- Knowledge embeddings -----------------------------------------------
+
+    pub fn upsert_embedding(&self, node_key: &str, vector: &[f32]) -> Result<()> {
+        let json = serde_json::to_string(vector)?;
+        let conn = self.0.lock().unwrap();
+        conn.execute(
+            "INSERT INTO kg_embeddings (node_key, vector) VALUES (?1, ?2)
+             ON CONFLICT(node_key) DO UPDATE SET vector = excluded.vector",
+            rusqlite::params![node_key, json],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_embeddings(&self) -> Result<Vec<(String, Vec<f32>)>> {
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT node_key, vector FROM kg_embeddings")?;
+        let rows = stmt.query_map([], |row| {
+            let key: String = row.get(0)?;
+            let json: String = row.get(1)?;
+            let vector: Vec<f32> = serde_json::from_str(&json).unwrap_or_default();
+            Ok((key, vector))
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn delete_embedding(&self, node_key: &str) -> Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute("DELETE FROM kg_embeddings WHERE node_key = ?1", [node_key])?;
+        Ok(())
+    }
+
+    pub fn clear_embeddings(&self) -> Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute("DELETE FROM kg_embeddings", [])?;
+        Ok(())
+    }
 }
 
 fn migrate(conn: &Connection) -> Result<()> {
@@ -519,6 +556,10 @@ fn migrate(conn: &Connection) -> Result<()> {
             dedupe_key  TEXT NOT NULL,
             run_at      TEXT NOT NULL,
             PRIMARY KEY (routine_id, dedupe_key)
+        );
+        CREATE TABLE IF NOT EXISTS kg_embeddings (
+            node_key TEXT PRIMARY KEY,
+            vector   TEXT NOT NULL
         );",
     )?;
     Ok(())

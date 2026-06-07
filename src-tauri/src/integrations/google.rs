@@ -16,12 +16,14 @@ const TOKEN_ENDPOINT: &str = "https://oauth2.googleapis.com/token";
 const CALENDAR_BASE: &str = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
 const GMAIL_BASE: &str = "https://gmail.googleapis.com/gmail/v1/users/me";
 const DOCS_BASE: &str = "https://docs.googleapis.com/v1/documents";
+const DRIVE_BASE: &str = "https://www.googleapis.com/drive/v3/files";
 
 const SCOPES: &[&str] = &[
     "https://www.googleapis.com/auth/calendar",
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/documents",
     "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/drive.readonly",
     "openid",
     "email",
 ];
@@ -341,6 +343,94 @@ pub async fn list_gmail_messages(max_results: u32) -> Result<Vec<GmailMessage>> 
         });
     }
     Ok(out)
+}
+
+/// Create a Gmail draft (returns draft id).
+pub async fn create_gmail_draft(to: &str, subject: &str, body: &str) -> Result<String> {
+    use base64::Engine;
+    let token = access_token().await?;
+    let raw = format!(
+        "To: {to}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{body}"
+    );
+    let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw.as_bytes());
+    let resp = reqwest::Client::new()
+        .post(format!("{GMAIL_BASE}/drafts"))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "message": { "raw": encoded } }))
+        .send()
+        .await?;
+    if !resp.status().is_success() {
+        return Err(Error::Provider(format!(
+            "Gmail draft error ({})",
+            resp.status()
+        )));
+    }
+    let v: serde_json::Value = resp.json().await?;
+    v.get("id")
+        .and_then(|id| id.as_str())
+        .map(String::from)
+        .ok_or_else(|| Error::Provider("unexpected Gmail draft response".into()))
+}
+
+// --- Google Drive ----------------------------------------------------------
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DriveFile {
+    pub id: String,
+    pub name: String,
+    pub mime_type: Option<String>,
+    pub modified_time: Option<String>,
+    pub web_view_link: Option<String>,
+}
+
+pub async fn list_drive_files(max_results: u32) -> Result<Vec<DriveFile>> {
+    let token = access_token().await?;
+    let resp = reqwest::Client::new()
+        .get(DRIVE_BASE)
+        .bearer_auth(&token)
+        .query(&[
+            ("pageSize", max_results.to_string()),
+            (
+                "fields",
+                "files(id,name,mimeType,modifiedTime,webViewLink)".into(),
+            ),
+            ("orderBy", "modifiedTime desc".into()),
+        ])
+        .send()
+        .await?;
+    if !resp.status().is_success() {
+        return Err(Error::Provider(format!(
+            "Drive list error ({})",
+            resp.status()
+        )));
+    }
+    let body: serde_json::Value = resp.json().await?;
+    let files = body
+        .get("files")
+        .and_then(|f| f.as_array())
+        .cloned()
+        .unwrap_or_default();
+    Ok(files
+        .iter()
+        .filter_map(|f| {
+            Some(DriveFile {
+                id: f.get("id")?.as_str()?.to_string(),
+                name: f.get("name")?.as_str()?.to_string(),
+                mime_type: f
+                    .get("mimeType")
+                    .and_then(|m| m.as_str())
+                    .map(String::from),
+                modified_time: f
+                    .get("modifiedTime")
+                    .and_then(|m| m.as_str())
+                    .map(String::from),
+                web_view_link: f
+                    .get("webViewLink")
+                    .and_then(|m| m.as_str())
+                    .map(String::from),
+            })
+        })
+        .collect())
 }
 
 // --- Google Docs -----------------------------------------------------------

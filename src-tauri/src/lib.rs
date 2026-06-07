@@ -5,6 +5,7 @@
 mod commands;
 mod db;
 mod docs;
+mod embeddings;
 mod error;
 mod integrations;
 mod knowledge;
@@ -90,6 +91,7 @@ pub fn run() {
             commands::kg_node_image,
             commands::kg_set_node_image,
             commands::kg_remove_node_image,
+            commands::kg_reindex_embeddings,
             commands::integrations_status,
             commands::google_set_client,
             commands::google_connect,
@@ -115,6 +117,24 @@ pub fn run() {
             commands::delete_doc,
             commands::gmail_list_messages,
             commands::google_create_doc,
+            commands::gmail_create_draft,
+            commands::drive_list_files,
+            commands::github_set_token,
+            commands::github_disconnect,
+            commands::github_list_repos,
+            commands::github_list_issues,
+            commands::linear_set_key,
+            commands::linear_disconnect,
+            commands::linear_list_issues,
+            commands::notion_set_token,
+            commands::notion_disconnect,
+            commands::notion_search_pages,
+            commands::telegram_set_credentials,
+            commands::telegram_disconnect,
+            commands::telegram_send_message,
+            commands::whatsapp_set_credentials,
+            commands::whatsapp_disconnect,
+            commands::whatsapp_send_message,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Donna");

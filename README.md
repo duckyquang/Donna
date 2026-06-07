@@ -157,6 +157,8 @@ npm run tauri dev
 npm run tauri build
 ```
 
+See [`docs/BUILD.md`](docs/BUILD.md) for platform prerequisites, embeddings setup, and CI release tags.
+
 ### Project layout
 ```
 donna/
@@ -189,7 +191,7 @@ Full details in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 Contributions are welcome and appreciated. ❤️
 
 1. Fork the repo and create a feature branch.
-2. Read [`CONTEXT.md`](CONTEXT.md) to understand the architecture and principles.
+2. Read [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) and [`CONTEXT.md`](CONTEXT.md).
 3. Make your change, keeping end-user flows UI-only and secrets out of the codebase.
 4. Open a pull request with a clear description.
 

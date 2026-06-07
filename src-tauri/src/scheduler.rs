@@ -180,9 +180,20 @@ async fn execute_routine(app: &AppHandle, item: &DueRoutine) -> Result<()> {
     let ollama_host = db
         .get_setting("ollama_host")?
         .unwrap_or_else(|| providers::DEFAULT_OLLAMA_HOST.into());
+    let embed_model = db
+        .get_setting("embed_model")?
+        .unwrap_or_else(|| crate::embeddings::DEFAULT_EMBED_MODEL.into());
     let api_key = secrets::get_api_key(&provider)?;
 
-    let context = gather_context(&item.routine, item.context.as_deref()).await?;
+    let context = gather_context(
+        &db,
+        &item.routine,
+        item.context.as_deref(),
+        &provider,
+        &ollama_host,
+        &embed_model,
+    )
+    .await?;
     let instruction = item
         .routine
         .prompt
@@ -243,7 +254,14 @@ async fn execute_routine(app: &AppHandle, item: &DueRoutine) -> Result<()> {
     Ok(())
 }
 
-async fn gather_context(routine: &Routine, extra: Option<&str>) -> Result<String> {
+async fn gather_context(
+    db: &Db,
+    routine: &Routine,
+    extra: Option<&str>,
+    provider: &str,
+    ollama_host: &str,
+    embed_model: &str,
+) -> Result<String> {
     let mut parts = Vec::new();
 
     if let Ok(summary) = knowledge::summary_for_prompt() {
@@ -257,7 +275,12 @@ async fn gather_context(routine: &Routine, extra: Option<&str>) -> Result<String
     }
 
     let query = routine.name.clone();
-    if let Ok(retrieval) = retrieval::search_for_prompt(&query) {
+    let cfg = retrieval::RetrievalConfig {
+        provider,
+        ollama_host,
+        embed_model,
+    };
+    if let Ok(retrieval) = retrieval::search_for_prompt(&query, db, &cfg).await {
         if !retrieval.is_empty() {
             parts.push(format!("### Retrieved memories\n{retrieval}"));
         }

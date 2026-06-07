@@ -30,6 +30,7 @@ export default function Settings() {
   const [provider, setProvider] = useState<ProviderId>("ollama");
   const [model, setModel] = useState("");
   const [ollamaHost, setOllamaHost] = useState("http://localhost:11434");
+  const [embedModel, setEmbedModel] = useState("nomic-embed-text");
   const [autonomyLevel, setAutonomyLevel] = useState<AutonomyLevel>("confirm");
   const [apiKey, setApiKey] = useState("");
   const [hasKey, setHasKey] = useState(false);
@@ -46,6 +47,7 @@ export default function Settings() {
       setProvider(config.provider);
       setModel(config.model);
       setOllamaHost(config.ollamaHost);
+      setEmbedModel(config.embedModel ?? "nomic-embed-text");
       setAutonomyLevel(config.autonomyLevel ?? "confirm");
     }
   }, [config]);
@@ -76,6 +78,7 @@ export default function Settings() {
           provider,
           model,
           ollamaHost,
+          embedModel,
           onboarded: true,
           profileOnboarded: config?.profileOnboarded ?? false,
           autonomyLevel,
@@ -104,6 +107,7 @@ export default function Settings() {
         provider,
         model,
         ollamaHost,
+        embedModel,
         onboarded: true,
         profileOnboarded: config?.profileOnboarded ?? false,
         autonomyLevel,
@@ -145,6 +149,7 @@ export default function Settings() {
 
         <section className="space-y-3">
           {isLocal ? (
+            <>
             <label className="block">
               <span className="mb-1 block text-sm text-gray-300">Ollama host</span>
               <input
@@ -153,6 +158,19 @@ export default function Settings() {
                 className="w-full rounded-lg border border-white/10 bg-donna-bg px-3 py-2 text-sm text-white outline-none focus:border-donna-accent"
               />
             </label>
+            <label className="block">
+              <span className="mb-1 block text-sm text-gray-300">Embedding model</span>
+              <input
+                value={embedModel}
+                onChange={(e) => setEmbedModel(e.target.value)}
+                placeholder="nomic-embed-text"
+                className="w-full rounded-lg border border-white/10 bg-donna-bg px-3 py-2 text-sm text-white outline-none focus:border-donna-accent"
+              />
+              <span className="mt-1 block text-xs text-gray-500">
+                Used for semantic memory retrieval. Run <code className="text-gray-400">ollama pull {embedModel || "nomic-embed-text"}</code> first.
+              </span>
+            </label>
+            </>
           ) : (
             <div className="space-y-1">
               <span className="block text-sm text-gray-300">{meta.label} API key</span>

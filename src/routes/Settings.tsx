@@ -2,9 +2,27 @@ import { useEffect, useState } from "react";
 import { Check, RefreshCw, Trash2 } from "lucide-react";
 import { PageShell } from "../components/PageShell";
 import { PROVIDERS, type ProviderId } from "../lib/models/providers";
-import { api } from "../lib/api";
+import { api, type AutonomyLevel } from "../lib/api";
 import { useConfig } from "../lib/useConfig";
 import { Button, Spinner } from "../components/ui";
+
+const AUTONOMY_OPTIONS: { value: AutonomyLevel; label: string; desc: string }[] = [
+  {
+    value: "confirm",
+    label: "Confirm before acting",
+    desc: "Donna asks before sending emails, creating events, or taking other actions.",
+  },
+  {
+    value: "act",
+    label: "Act on clear tasks",
+    desc: "Donna handles straightforward tasks automatically and confirms ambiguous ones.",
+  },
+  {
+    value: "autonomous",
+    label: "High autonomy",
+    desc: "Donna acts proactively with minimal confirmation when she is confident.",
+  },
+];
 
 export default function Settings() {
   const { config, save, refresh } = useConfig();
@@ -12,6 +30,7 @@ export default function Settings() {
   const [provider, setProvider] = useState<ProviderId>("ollama");
   const [model, setModel] = useState("");
   const [ollamaHost, setOllamaHost] = useState("http://localhost:11434");
+  const [autonomyLevel, setAutonomyLevel] = useState<AutonomyLevel>("confirm");
   const [apiKey, setApiKey] = useState("");
   const [hasKey, setHasKey] = useState(false);
   const [models, setModels] = useState<string[]>([]);
@@ -27,6 +46,7 @@ export default function Settings() {
       setProvider(config.provider);
       setModel(config.model);
       setOllamaHost(config.ollamaHost);
+      setAutonomyLevel(config.autonomyLevel ?? "confirm");
     }
   }, [config]);
 
@@ -58,6 +78,7 @@ export default function Settings() {
           ollamaHost,
           onboarded: true,
           profileOnboarded: config?.profileOnboarded ?? false,
+          autonomyLevel,
         });
       }
       const list = await api.listModels(provider);
@@ -85,6 +106,7 @@ export default function Settings() {
         ollamaHost,
         onboarded: true,
         profileOnboarded: config?.profileOnboarded ?? false,
+        autonomyLevel,
       });
       await refresh();
       setStatus("Settings saved.");
@@ -183,6 +205,38 @@ export default function Settings() {
           {!models.length && model && (
             <p className="text-xs text-gray-500">Current model: {model}</p>
           )}
+        </section>
+
+        <section>
+          <h2 className="mb-2 text-sm font-medium text-gray-300">Autonomy</h2>
+          <p className="mb-3 text-xs text-gray-500">
+            How much Donna can do on her own before checking with you.
+          </p>
+          <div className="space-y-2">
+            {AUTONOMY_OPTIONS.map((opt) => (
+              <label
+                key={opt.value}
+                className={`flex cursor-pointer gap-3 rounded-xl border p-3 transition-colors ${
+                  autonomyLevel === opt.value
+                    ? "border-donna-accent bg-donna-accent/10"
+                    : "border-white/10 hover:bg-white/5"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="autonomy"
+                  value={opt.value}
+                  checked={autonomyLevel === opt.value}
+                  onChange={() => setAutonomyLevel(opt.value)}
+                  className="mt-1 accent-donna-accent"
+                />
+                <div>
+                  <div className="text-sm font-medium text-white">{opt.label}</div>
+                  <div className="text-xs text-gray-400">{opt.desc}</div>
+                </div>
+              </label>
+            ))}
+          </div>
         </section>
 
         {status && (

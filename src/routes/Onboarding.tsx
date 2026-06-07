@@ -41,6 +41,7 @@ export default function Onboarding() {
           ollamaHost,
           onboarded: false,
           profileOnboarded: false,
+          autonomyLevel: "confirm",
         });
       }
       const list = await api.listModels(provider);
@@ -65,7 +66,14 @@ export default function Onboarding() {
     }
     setFinishing(true);
     try {
-      await save({ provider, model, ollamaHost, onboarded: true, profileOnboarded: false });
+      await save({
+        provider,
+        model,
+        ollamaHost,
+        onboarded: true,
+        profileOnboarded: false,
+        autonomyLevel: "confirm",
+      });
       navigate("/chat", { replace: true });
     } catch (e) {
       setError(String(e));

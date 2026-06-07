@@ -7,12 +7,51 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   return tauriInvoke<T>(cmd, args);
 }
 
+export type AutonomyLevel = "confirm" | "act" | "autonomous";
+
 export interface AppConfig {
   provider: ProviderId;
   model: string;
   ollamaHost: string;
   onboarded: boolean;
   profileOnboarded: boolean;
+  autonomyLevel: AutonomyLevel;
+}
+
+export interface Routine {
+  id: string;
+  name: string;
+  enabled: boolean;
+  dailyTime: string | null;
+  prompt: string;
+  builtin: boolean;
+}
+
+export interface Notification {
+  id: number;
+  title: string;
+  body: string;
+  read: boolean;
+  createdAt: string;
+}
+
+export interface Doc {
+  id: string;
+  title: string;
+  createdAt: string;
+  source?: string;
+}
+
+export interface DocDetail extends Doc {
+  content: string;
+}
+
+export interface GmailMessage {
+  id: string;
+  subject: string;
+  from: string;
+  snippet: string;
+  date: string;
 }
 
 export interface BasicFieldStatus {
@@ -144,6 +183,87 @@ interface RawConfig {
   ollama_host: string;
   onboarded: boolean;
   profile_onboarded: boolean;
+  autonomy_level?: AutonomyLevel;
+}
+
+interface RawRoutine {
+  id: string;
+  name: string;
+  enabled: boolean;
+  daily_time: string | null;
+  prompt: string;
+  builtin: boolean;
+}
+
+interface RawNotification {
+  id: number;
+  title: string;
+  body: string;
+  read: boolean;
+  created_at: string;
+}
+
+interface RawDoc {
+  id: string;
+  title: string;
+  created_at: string;
+  source?: string;
+}
+
+interface RawDocDetail extends RawDoc {
+  content: string;
+}
+
+interface RawGmailMessage {
+  id: string;
+  subject: string;
+  from: string;
+  snippet: string;
+  date: string;
+}
+
+function toRoutine(r: RawRoutine): Routine {
+  return {
+    id: r.id,
+    name: r.name,
+    enabled: r.enabled,
+    dailyTime: r.daily_time,
+    prompt: r.prompt,
+    builtin: r.builtin,
+  };
+}
+
+function toNotification(n: RawNotification): Notification {
+  return {
+    id: n.id,
+    title: n.title,
+    body: n.body,
+    read: n.read,
+    createdAt: n.created_at,
+  };
+}
+
+function toDoc(d: RawDoc): Doc {
+  return {
+    id: d.id,
+    title: d.title,
+    createdAt: d.created_at,
+    source: d.source,
+  };
+}
+
+function toDocDetail(d: RawDocDetail): DocDetail {
+  return { ...toDoc(d), content: d.content };
+}
+
+function toGmailMessage(m: RawGmailMessage): GmailMessage {
+  return {
+    id: m.id,
+    subject: m.subject,
+    from: m.from,
+    snippet: m.snippet,
+    date: m.date,
+  };
 }
 interface RawBasicFieldStatus {
   id: string;
@@ -173,6 +293,7 @@ export const api = {
       ollamaHost: c.ollama_host,
       onboarded: c.onboarded,
       profileOnboarded: c.profile_onboarded ?? false,
+      autonomyLevel: c.autonomy_level ?? "confirm",
     };
   },
 
@@ -184,6 +305,7 @@ export const api = {
         ollama_host: config.ollamaHost,
         onboarded: config.onboarded,
         profile_onboarded: config.profileOnboarded,
+        autonomy_level: config.autonomyLevel,
       },
     });
   },
@@ -396,5 +518,62 @@ export const api = {
   },
   calendarDeleteEvent(id: string): Promise<void> {
     return invoke("calendar_delete_event", { id });
+  },
+
+  // --- Routines & notifications ---
+  async listRoutines(): Promise<Routine[]> {
+    const rows = await invoke<RawRoutine[]>("list_routines");
+    return rows.map(toRoutine);
+  },
+
+  toggleRoutine(id: string, enabled: boolean): Promise<void> {
+    return invoke("toggle_routine", { id, enabled });
+  },
+
+  async createRoutine(input: {
+    name: string;
+    dailyTime: string;
+    prompt: string;
+  }): Promise<Routine> {
+    return toRoutine(
+      await invoke<RawRoutine>("create_routine", {
+        name: input.name,
+        dailyTime: input.dailyTime,
+        prompt: input.prompt,
+      })
+    );
+  },
+
+  deleteRoutine(id: string): Promise<void> {
+    return invoke("delete_routine", { id });
+  },
+
+  async listNotifications(): Promise<Notification[]> {
+    const rows = await invoke<RawNotification[]>("list_notifications");
+    return rows.map(toNotification);
+  },
+
+  markNotificationRead(id: number): Promise<void> {
+    return invoke("mark_notification_read", { id });
+  },
+
+  // --- Docs ---
+  async listDocs(): Promise<Doc[]> {
+    const rows = await invoke<RawDoc[]>("list_docs");
+    return rows.map(toDoc);
+  },
+
+  async getDoc(id: string): Promise<DocDetail> {
+    return toDocDetail(await invoke<RawDocDetail>("get_doc", { id }));
+  },
+
+  deleteDoc(id: string): Promise<void> {
+    return invoke("delete_doc", { id });
+  },
+
+  // --- Gmail ---
+  async gmailListMessages(): Promise<GmailMessage[]> {
+    const rows = await invoke<RawGmailMessage[]>("gmail_list_messages");
+    return rows.map(toGmailMessage);
   },
 };

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Check, Link2, Plug, RefreshCw, Unplug } from "lucide-react";
 import { PageShell } from "../components/PageShell";
 import { Button, Spinner } from "../components/ui";
-import { api, type IntegrationStatus } from "../lib/api";
+import { api, type GmailMessage, type IntegrationStatus } from "../lib/api";
 
 export default function Integrations() {
   const [statuses, setStatuses] = useState<IntegrationStatus[]>([]);
@@ -15,9 +15,25 @@ export default function Integrations() {
   const [clientSecret, setClientSecret] = useState("");
   const [slackToken, setSlackToken] = useState("");
   const [fathomKey, setFathomKey] = useState("");
+  const [gmailMessages, setGmailMessages] = useState<GmailMessage[]>([]);
+  const [gmailLoading, setGmailLoading] = useState(false);
 
   const refresh = async () => {
-    setStatuses(await api.integrationsStatus());
+    const next = await api.integrationsStatus();
+    setStatuses(next);
+    const googleConnected = !!next.find((s) => s.id === "google")?.connected;
+    if (googleConnected) {
+      setGmailLoading(true);
+      try {
+        setGmailMessages(await api.gmailListMessages());
+      } catch {
+        setGmailMessages([]);
+      } finally {
+        setGmailLoading(false);
+      }
+    } else {
+      setGmailMessages([]);
+    }
   };
 
   useEffect(() => {
@@ -69,13 +85,41 @@ export default function Integrations() {
             connected={!!google?.connected}
           >
             {google?.connected ? (
-              <Button
-                variant="danger"
-                onClick={() => run("google", api.googleDisconnect)}
-                disabled={busy === "google"}
-              >
-                {busy === "google" ? <Spinner /> : <Unplug size={16} />} Disconnect
-              </Button>
+              <div className="space-y-3">
+                <Button
+                  variant="danger"
+                  onClick={() => run("google", api.googleDisconnect)}
+                  disabled={busy === "google"}
+                >
+                  {busy === "google" ? <Spinner /> : <Unplug size={16} />} Disconnect
+                </Button>
+                <div className="rounded-lg border border-white/10 bg-donna-bg/50 p-3">
+                  <div className="mb-2 text-xs font-medium text-gray-300">Recent Gmail</div>
+                  {gmailLoading ? (
+                    <div className="flex items-center gap-2 text-xs text-gray-400">
+                      <Spinner /> Loading messages…
+                    </div>
+                  ) : gmailMessages.length === 0 ? (
+                    <p className="text-xs text-gray-500">No recent messages to show.</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {gmailMessages.slice(0, 5).map((m) => (
+                        <li
+                          key={m.id}
+                          className="rounded-lg border border-white/5 px-2 py-1.5"
+                        >
+                          <div className="truncate text-xs font-medium text-white">
+                            {m.subject || "(No subject)"}
+                          </div>
+                          <div className="truncate text-[11px] text-gray-400">
+                            {m.from} · {m.snippet}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
             ) : (
               <div className="space-y-2">
                 <p className="text-xs text-gray-400">

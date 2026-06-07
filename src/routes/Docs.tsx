@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { FileText, RefreshCw, Trash2, X } from "lucide-react";
 import { PageShell } from "../components/PageShell";
 import { Markdown } from "../components/Markdown";
-import { Spinner } from "../components/ui";import { api, type Doc, type DocDetail } from "../lib/api";
+import { Spinner } from "../components/ui";
+import { api, type Doc, type DocDetail } from "../lib/api";
 
 export default function Docs() {
   const [docs, setDocs] = useState<Doc[]>([]);

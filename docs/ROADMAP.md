@@ -9,7 +9,7 @@ for the full architecture and design rationale behind each item.
 - [x] Repository scaffold (Tauri + React + TS + Tailwind)
 - [x] Model layer interface with Ollama + cloud provider stubs
 - [x] Memory/knowledge-graph client stubs
-- [x] Rust core command surface (chat, list_models, schedule_routine, init_db)
+- [x] Rust core command surface (chat, list_models, init_db)
 
 ## Phase 1 — MVP ✅
 - [x] Onboarding wizard: pick a local model (Ollama) or paste a cloud API key
@@ -25,36 +25,35 @@ for the full architecture and design rationale behind each item.
       Gmail, Calendar, Docs/Drive
 - [x] Calendar view with two-way Google Calendar sync (list/create/update/delete)
 - [x] Slack connector (read channels, send messages)
-- [x] Fathom connector (secure API key connection; transcript actions land with Docs)
+- [x] Fathom connector (secure API key + meeting list for routines/docs)
 - [x] Integrations Hub UI with per-service connect/disconnect + status
-- [ ] Full Gmail/Docs/Drive actions (wired up alongside their features)
+- [x] Gmail read (recent messages in Integrations Hub) + Google Docs create API
 
-## Phase 3 — Proactive routines
-- [ ] Background scheduler in the Rust core
-- [ ] Native OS notifications (actionable)
-- [ ] Built-in routines: Morning Briefing, Meeting Briefing, Relationship Reconnect
-- [ ] Auto-doc generation from Fathom meetings and important messages
+## Phase 3 — Proactive routines ✅
+- [x] Background scheduler in the Rust core (60s tick)
+- [x] Native OS notifications via Tauri notification plugin
+- [x] Built-in routines: Morning Briefing, Meeting Briefing, Relationship Reconnect
+- [x] Auto-doc generation from routines (local Docs store) + Fathom context when connected
+- [x] Notifications UI — enable/disable routines, custom daily routines, notification inbox
+- [x] Docs UI — browse and read Donna-generated documents
 
-## Phase 4 — Learning & voice
-- [ ] Richer knowledge graph + hybrid (structured + embedding) retrieval
-- [ ] Voice/style calibration with tiered autonomy (confirm → act → autonomous)
-- [ ] User-described routines in natural language
-- [ ] Memory view: browse, edit, and audit what Donna knows
+## Phase 4 — Learning & voice ✅
+- [x] Knowledge retrieval — keyword search over the folder-based knowledge base, injected into chat
+- [x] Tiered autonomy (confirm → act → autonomous) in Settings, reflected in Donna's system prompt
+- [x] User-described routines in natural language (custom routine form in Notifications)
+- [x] Memory view — Mind Map + node editor + profile onboarding + knowledge audit in chat
 
 ## Cross-cutting features
 - [x] Formatted chat output — render Donna's replies as Markdown (bold, lists, code,
       links), including while streaming
-- [x] Mind Map / Knowledge Cartography — node-based, clustered visualization of the
-      knowledge base, continuously updated by Donna, with click-to-open nodes
-- [x] Folder-based knowledge base — categories are folders, sub-folders are branches,
-      files are nodes (Markdown + optional image); gitignored, recreated per user
-- [x] Donna curates the knowledge base — she decides what's worth saving, the category,
-      the type, and the description (no more "unknown data" nodes)
-- [x] Editable nodes from the Mind Map — edit label/category/type/note, attach or remove
-      an image, add or delete nodes; changes write back to the files
-- [ ] Embedding-based retrieval over the knowledge base
+- [x] Mind Map / Knowledge Cartography — hierarchical folder visualization with category filter
+- [x] Folder-based knowledge base — nested paths, Donna-curated after each chat
+- [x] Interactive donna-ask questions with batch numbered answers
+- [x] Profile onboarding wizard on first conversation
+- [ ] Embedding-based retrieval (Ollama/local embeddings) — keyword retrieval shipped first
 
 ## Ongoing
-- [ ] More integrations (Notion, Telegram, GitHub, Linear, …)
+- [ ] More integrations (Notion, Telegram, GitHub, Linear, WhatsApp, …)
 - [ ] Cross-platform packaged installers (macOS, Windows, Linux)
 - [ ] Docs site and contributor guides
+- [ ] Full Gmail compose/draft and Drive file management UI

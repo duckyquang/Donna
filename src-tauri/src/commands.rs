@@ -7,11 +7,12 @@ use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 use tauri::State;
 
-use crate::db::{Conversation, Db, Message};
+use crate::db::{Conversation, Db, Doc, Message, Notification, Routine};
 use crate::error::{Error, Result};
 use crate::integrations::{self, google, slack};
 use crate::knowledge;
 use crate::providers::{self, ChatTurn};
+use crate::retrieval;
 use crate::secrets;
 
 const DONNA_SYSTEM_PROMPT: &str = "You are Donna, a warm, sharp, and proactive personal \
@@ -51,14 +52,35 @@ You may write normal Markdown before and after question blocks. When the user te
 to remember something, acknowledge it clearly.";
 
 /// Assemble the full system prompt: persona + basics audit + live knowledge + setup status.
-fn build_system_prompt(config: &AppConfig) -> Result<String> {
+fn build_system_prompt(config: &AppConfig, retrieval_query: Option<&str>) -> Result<String> {
     let basics = knowledge::basics_checklist_for_prompt()?;
     let known = knowledge::summary_for_prompt()?;
     let setup = build_setup_context(config)?;
 
-    Ok(format!(
+    let mut prompt = format!(
         "{DONNA_SYSTEM_PROMPT}\n\n## Basics checklist\n{basics}\n\n## What Donna knows about this user\n{known}\n\n{setup}"
-    ))
+    );
+
+    if let Some(query) = retrieval_query {
+        let ctx = retrieval::search_for_prompt(query)?;
+        if !ctx.is_empty() {
+            prompt.push_str("\n\n## Relevant memories (retrieval)\n");
+            prompt.push_str(&ctx);
+        }
+    }
+
+    prompt.push_str("\n\n## Autonomy level\n");
+    prompt.push_str(autonomy_note(&config.autonomy_level));
+
+    Ok(prompt)
+}
+
+fn autonomy_note(level: &str) -> &'static str {
+    match level {
+        "act" => "The user set autonomy to **act**: take reasonable low-risk actions without asking first.",
+        "autonomous" => "The user set autonomy to **autonomous**: proceed proactively; only confirm high-impact actions.",
+        _ => "The user set autonomy to **confirm**: ask before acting on their behalf (calendar, email, messages, etc.).",
+    }
 }
 
 fn build_setup_context(config: &AppConfig) -> Result<String> {
@@ -98,6 +120,13 @@ pub struct AppConfig {
     pub onboarded: bool,
     /// User finished the first-conversation profile basics wizard.
     pub profile_onboarded: bool,
+    /// confirm | act | autonomous
+    #[serde(default = "default_autonomy_level")]
+    pub autonomy_level: String,
+}
+
+fn default_autonomy_level() -> String {
+    "confirm".into()
 }
 
 fn load_config(db: &Db) -> Result<AppConfig> {
@@ -109,6 +138,9 @@ fn load_config(db: &Db) -> Result<AppConfig> {
             .unwrap_or_else(|| providers::DEFAULT_OLLAMA_HOST.into()),
         onboarded: db.get_setting("onboarded")?.as_deref() == Some("true"),
         profile_onboarded: db.get_setting("profile_onboarded")?.as_deref() == Some("true"),
+        autonomy_level: db
+            .get_setting("autonomy_level")?
+            .unwrap_or_else(|| "confirm".into()),
     })
 }
 
@@ -145,6 +177,7 @@ pub fn save_config(db: State<Db>, config: AppConfig) -> Result<()> {
             "false"
         },
     )?;
+    db.set_setting("autonomy_level", &config.autonomy_level)?;
     if config.provider == "ollama" {
         spawn_ollama_warmup(config.ollama_host, config.model);
     }
@@ -309,7 +342,14 @@ pub async fn send_chat(
     let api_key = secrets::get_api_key(&config.provider)?;
 
     // Build the prompt: persona + basics audit + live knowledge + conversation history.
-    let mut system_content = build_system_prompt(&config)?;
+    let retrieval_query = db
+        .get_messages(conversation_id)?
+        .into_iter()
+        .rev()
+        .find(|m| m.role == "user")
+        .map(|m| m.content);
+    let mut system_content =
+        build_system_prompt(&config, retrieval_query.as_deref())?;
     let user_message_count = db
         .get_messages(conversation_id)?
         .iter()
@@ -728,4 +768,87 @@ pub fn fathom_set_key(key: String) -> Result<()> {
 #[tauri::command]
 pub fn fathom_disconnect() -> Result<()> {
     integrations::fathom::disconnect()
+}
+
+// --- Routines ---------------------------------------------------------------
+
+#[tauri::command]
+pub fn list_routines(db: State<Db>) -> Result<Vec<Routine>> {
+    db.list_routines()
+}
+
+#[tauri::command]
+pub fn toggle_routine(db: State<Db>, id: i64, enabled: bool) -> Result<()> {
+    db.toggle_routine(id, enabled)
+}
+
+#[derive(Deserialize)]
+pub struct CreateRoutineInput {
+    pub name: String,
+    pub schedule_type: String,
+    pub hour: Option<i32>,
+    pub minute: Option<i32>,
+    pub day_of_week: Option<i32>,
+    pub minutes_before: Option<i32>,
+    pub prompt: Option<String>,
+}
+
+#[tauri::command]
+pub fn create_routine(db: State<Db>, input: CreateRoutineInput) -> Result<i64> {
+    db.create_routine(
+        &input.name,
+        &input.schedule_type,
+        input.hour,
+        input.minute,
+        input.day_of_week,
+        input.minutes_before,
+        input.prompt.as_deref(),
+    )
+}
+
+#[tauri::command]
+pub fn delete_routine(db: State<Db>, id: i64) -> Result<()> {
+    db.delete_routine(id)
+}
+
+// --- Notifications ----------------------------------------------------------
+
+#[tauri::command]
+pub fn list_notifications(db: State<Db>) -> Result<Vec<Notification>> {
+    db.list_notifications()
+}
+
+#[tauri::command]
+pub fn mark_notification_read(db: State<Db>, id: i64) -> Result<()> {
+    db.mark_notification_read(id)
+}
+
+// --- Docs -------------------------------------------------------------------
+
+#[tauri::command]
+pub fn list_docs(db: State<Db>) -> Result<Vec<Doc>> {
+    db.list_docs()
+}
+
+#[tauri::command]
+pub fn get_doc(db: State<Db>, id: i64) -> Result<Doc> {
+    db.get_doc(id)?
+        .ok_or_else(|| Error::Provider(format!("Document {id} not found")))
+}
+
+#[tauri::command]
+pub fn delete_doc(db: State<Db>, id: i64) -> Result<()> {
+    db.delete_doc(id)
+}
+
+// --- Gmail ------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn gmail_list_messages(max_results: u32) -> Result<Vec<google::GmailMessage>> {
+    google::list_gmail_messages(max_results).await
+}
+
+#[tauri::command]
+pub async fn google_create_doc(title: String) -> Result<String> {
+    google::create_google_doc(&title).await
 }

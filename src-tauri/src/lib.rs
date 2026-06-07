@@ -4,11 +4,14 @@
 
 mod commands;
 mod db;
+mod docs;
 mod error;
 mod integrations;
 mod knowledge;
 mod oauth;
 mod providers;
+mod retrieval;
+mod scheduler;
 mod secrets;
 
 use db::Db;
@@ -60,6 +63,8 @@ pub fn run() {
                 });
             }
 
+            scheduler::run_loop(app.handle().clone());
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -99,6 +104,17 @@ pub fn run() {
             commands::slack_send_message,
             commands::fathom_set_key,
             commands::fathom_disconnect,
+            commands::list_routines,
+            commands::toggle_routine,
+            commands::create_routine,
+            commands::delete_routine,
+            commands::list_notifications,
+            commands::mark_notification_read,
+            commands::list_docs,
+            commands::get_doc,
+            commands::delete_doc,
+            commands::gmail_list_messages,
+            commands::google_create_doc,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Donna");

@@ -392,20 +392,20 @@ donna/
 - Local SQLite persistence for chats and basic memory.
 - Settings (provider/model selection, keychain-backed keys).
 
-### Phase 2 — Integrations
+### Phase 2 — Integrations ✅
 - Google Workspace OAuth (Gmail, Calendar, Docs/Drive).
 - Calendar view with two-way Google Calendar sync.
-- Slack + Fathom connectors.
+- Slack + Fathom connectors; Gmail read + Google Docs create.
 
-### Phase 3 — Proactive routines
+### Phase 3 — Proactive routines ✅
 - Background scheduler + native notifications.
-- Built-in routines (Morning Briefing, Meeting Briefing, Reconnect).
-- Auto-doc generation from Fathom meetings and important messages.
+- Built-in routines (Morning Briefing, Meeting Briefing, Relationship Reconnect).
+- Auto-doc generation; Notifications and Docs UI.
 
-### Phase 4 — Learning & voice
-- Richer knowledge graph + retrieval.
-- Voice/style calibration and tiered autonomy (confirm → act → autonomous).
-- Custom user-described routines in natural language.
+### Phase 4 — Learning & voice ✅
+- Keyword retrieval over the knowledge base injected into chat.
+- Tiered autonomy (confirm → act → autonomous) in Settings.
+- Custom user-described routines; Mind Map as the memory view.
 
 ### Cross-cutting (shipped incrementally)
 - **Formatted chat output**: Markdown rendering of Donna's replies (bold, lists, code,

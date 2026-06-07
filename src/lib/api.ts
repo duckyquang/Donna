@@ -564,16 +564,21 @@ export const api = {
   },
 
   async getDoc(id: string): Promise<DocDetail> {
-    return toDocDetail(await invoke<RawDocDetail>("get_doc", { id }));
+    const d = await invoke<RawDocDetail>("get_doc", { id: Number(id) });
+    return toDocDetail(d);
   },
 
   deleteDoc(id: string): Promise<void> {
-    return invoke("delete_doc", { id });
+    return invoke("delete_doc", { id: Number(id) });
   },
 
   // --- Gmail ---
-  async gmailListMessages(): Promise<GmailMessage[]> {
-    const rows = await invoke<RawGmailMessage[]>("gmail_list_messages");
+  async gmailListMessages(maxResults = 10): Promise<GmailMessage[]> {
+    const rows = await invoke<RawGmailMessage[]>("gmail_list_messages", { maxResults });
     return rows.map(toGmailMessage);
+  },
+
+  googleCreateDoc(title: string): Promise<string> {
+    return invoke("google_create_doc", { title });
   },
 };

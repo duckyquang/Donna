@@ -14,6 +14,8 @@ use crate::secrets;
 const AUTH_ENDPOINT: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_ENDPOINT: &str = "https://oauth2.googleapis.com/token";
 const CALENDAR_BASE: &str = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
+const GMAIL_BASE: &str = "https://gmail.googleapis.com/gmail/v1/users/me";
+const DOCS_BASE: &str = "https://docs.googleapis.com/v1/documents";
 
 const SCOPES: &[&str] = &[
     "https://www.googleapis.com/auth/calendar",
@@ -261,4 +263,106 @@ pub async fn delete_event(id: &str) -> Result<()> {
         )));
     }
     Ok(())
+}
+
+// --- Gmail -----------------------------------------------------------------
+
+/// A Gmail message in Donna's simplified shape.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GmailMessage {
+    pub id: String,
+    pub subject: Option<String>,
+    pub from: Option<String>,
+    pub snippet: Option<String>,
+}
+
+fn header_value(headers: &[serde_json::Value], name: &str) -> Option<String> {
+    headers
+        .iter()
+        .find(|h| h.get("name").and_then(|n| n.as_str()) == Some(name))
+        .and_then(|h| h.get("value").and_then(|v| v.as_str()))
+        .map(String::from)
+}
+
+pub async fn list_gmail_messages(max_results: u32) -> Result<Vec<GmailMessage>> {
+    let token = access_token().await?;
+    let client = reqwest::Client::new();
+    let list_resp = client
+        .get(format!("{GMAIL_BASE}/messages"))
+        .bearer_auth(&token)
+        .query(&[("maxResults", max_results.to_string())])
+        .send()
+        .await?;
+    if !list_resp.status().is_success() {
+        return Err(Error::Provider(format!(
+            "Gmail list error ({})",
+            list_resp.status()
+        )));
+    }
+    let body: serde_json::Value = list_resp.json().await?;
+    let ids: Vec<String> = body
+        .get("messages")
+        .and_then(|m| m.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|v| v.get("id").and_then(|id| id.as_str()).map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut out = Vec::new();
+    for id in ids {
+        let msg_resp = client
+            .get(format!("{GMAIL_BASE}/messages/{id}"))
+            .bearer_auth(&token)
+            .query(&[
+                ("format", "metadata".to_string()),
+                ("metadataHeaders", "Subject".to_string()),
+                ("metadataHeaders", "From".to_string()),
+            ])
+            .send()
+            .await?;
+        if !msg_resp.status().is_success() {
+            continue;
+        }
+        let msg: serde_json::Value = msg_resp.json().await?;
+        let headers = msg
+            .get("payload")
+            .and_then(|p| p.get("headers"))
+            .and_then(|h| h.as_array())
+            .map(|a| a.as_slice())
+            .unwrap_or(&[]);
+        out.push(GmailMessage {
+            id: id.clone(),
+            subject: header_value(headers, "Subject"),
+            from: header_value(headers, "From"),
+            snippet: msg.get("snippet").and_then(|s| s.as_str()).map(String::from),
+        });
+    }
+    Ok(out)
+}
+
+// --- Google Docs -----------------------------------------------------------
+
+/// Create an empty Google Doc and return its document id.
+pub async fn create_google_doc(title: &str) -> Result<String> {
+    let token = access_token().await?;
+    let resp = reqwest::Client::new()
+        .post(DOCS_BASE)
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "title": title }))
+        .send()
+        .await?;
+    if !resp.status().is_success() {
+        return Err(Error::Provider(format!(
+            "Google Docs error ({})",
+            resp.status()
+        )));
+    }
+    let body: serde_json::Value = resp.json().await?;
+    body.get("documentId")
+        .and_then(|id| id.as_str())
+        .map(String::from)
+        .ok_or_else(|| Error::Provider("unexpected Google Docs response".into()))
 }

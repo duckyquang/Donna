@@ -75,6 +75,35 @@ pub struct Doc {
     pub updated_at: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ReadingListItem {
+    pub id: i64,
+    pub url: String,
+    pub title: String,
+    pub summary: Option<String>,
+    pub tags: Option<String>,
+    pub read: bool,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct FocusSession {
+    pub id: i64,
+    pub label: String,
+    pub duration_min: i32,
+    pub started_at: String,
+    pub ended_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Habit {
+    pub id: i64,
+    pub name: String,
+    pub description: Option<String>,
+    pub enabled: bool,
+    pub created_at: String,
+}
+
 impl Db {
     /// Open (or create) the database at `path` and run migrations.
     pub fn open(path: &std::path::Path) -> Result<Self> {
@@ -229,6 +258,36 @@ impl Db {
                 None,
                 Some(10),
                 "After a meeting ends, pull the Fathom summary and create action items, follow-ups, and a knowledge base update.",
+            ),
+            (
+                "tech_news",
+                "Daily Tech News",
+                "daily",
+                9,
+                0,
+                None,
+                None,
+                "Fetch and summarize today's top AI and tech stories. Include key trends, notable releases, and anything relevant to the user's work and interests.",
+            ),
+            (
+                "weekly_review",
+                "Weekly Review",
+                "weekly",
+                20,
+                0,
+                Some(6),
+                None,
+                "Generate a comprehensive weekly review: what was accomplished, any open loops or unfinished tasks, upcoming week priorities, and who to reconnect with.",
+            ),
+            (
+                "end_of_day_journal",
+                "End-of-Day Journal",
+                "daily",
+                18,
+                0,
+                None,
+                None,
+                "Ask three reflection questions: (1) What went well today? (2) What was challenging? (3) What's the top priority for tomorrow? Synthesize the answers and save insights to the knowledge base.",
             ),
         ];
         for (builtin_id, name, schedule_type, hour, minute, day_of_week, minutes_before, prompt) in
@@ -550,6 +609,134 @@ impl Db {
         conn.execute("DELETE FROM projects WHERE id = ?1", [id])?;
         Ok(())
     }
+
+    // --- Reading list ------------------------------------------------------------
+
+    pub fn reading_list_add(&self, url: &str, title: &str) -> Result<i64> {
+        let conn = self.0.lock().unwrap();
+        let now = now_iso();
+        conn.execute(
+            "INSERT INTO reading_list (url, title, created_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params![url, title, now],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn reading_list_get(&self) -> Result<Vec<ReadingListItem>> {
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, url, title, summary, tags, read, created_at FROM reading_list ORDER BY id DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(ReadingListItem {
+                id: row.get(0)?,
+                url: row.get(1)?,
+                title: row.get(2)?,
+                summary: row.get(3)?,
+                tags: row.get(4)?,
+                read: row.get::<_, i32>(5)? != 0,
+                created_at: row.get(6)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn reading_list_update_summary(&self, id: i64, summary: &str) -> Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute("UPDATE reading_list SET summary = ?1, read = 1 WHERE id = ?2", rusqlite::params![summary, id])?;
+        Ok(())
+    }
+
+    pub fn reading_list_delete(&self, id: i64) -> Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute("DELETE FROM reading_list WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
+    // --- Focus sessions ----------------------------------------------------------
+
+    pub fn focus_start(&self, label: &str, duration_min: i32) -> Result<i64> {
+        let conn = self.0.lock().unwrap();
+        let now = now_iso();
+        conn.execute(
+            "INSERT INTO focus_sessions (label, duration_min, started_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params![label, duration_min, now],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn focus_end(&self, id: i64) -> Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute("UPDATE focus_sessions SET ended_at = ?1 WHERE id = ?2", rusqlite::params![now_iso(), id])?;
+        Ok(())
+    }
+
+    pub fn focus_active(&self) -> Result<Option<FocusSession>> {
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, label, duration_min, started_at, ended_at FROM focus_sessions WHERE ended_at IS NULL ORDER BY id DESC LIMIT 1",
+        )?;
+        let mut rows = stmt.query([])?;
+        if let Some(row) = rows.next()? {
+            return Ok(Some(FocusSession {
+                id: row.get(0)?,
+                label: row.get(1)?,
+                duration_min: row.get(2)?,
+                started_at: row.get(3)?,
+                ended_at: row.get(4)?,
+            }));
+        }
+        Ok(None)
+    }
+
+    // --- Habits ------------------------------------------------------------------
+
+    pub fn habit_create(&self, name: &str, description: Option<&str>) -> Result<i64> {
+        let conn = self.0.lock().unwrap();
+        let now = now_iso();
+        conn.execute(
+            "INSERT INTO habits (name, description, created_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params![name, description, now],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn habit_list(&self) -> Result<Vec<Habit>> {
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, description, enabled, created_at FROM habits WHERE enabled = 1 ORDER BY id ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(Habit {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                enabled: row.get::<_, i32>(3)? != 0,
+                created_at: row.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn habit_log(&self, habit_id: i64, note: Option<&str>) -> Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute(
+            "INSERT INTO habit_logs (habit_id, logged_at, note) VALUES (?1, ?2, ?3)",
+            rusqlite::params![habit_id, now_iso(), note],
+        )?;
+        Ok(())
+    }
+
+    pub fn habit_logged_today(&self, habit_id: i64) -> Result<bool> {
+        let conn = self.0.lock().unwrap();
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM habit_logs WHERE habit_id = ?1 AND logged_at LIKE ?2",
+            rusqlite::params![habit_id, format!("{today}%")],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
 }
 
 fn migrate(conn: &Connection) -> Result<()> {
@@ -621,6 +808,35 @@ fn migrate(conn: &Connection) -> Result<()> {
             template    TEXT NOT NULL,
             path        TEXT NOT NULL,
             created_at  TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS reading_list (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            url         TEXT NOT NULL,
+            title       TEXT NOT NULL,
+            summary     TEXT,
+            tags        TEXT,
+            read        INTEGER NOT NULL DEFAULT 0,
+            created_at  TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS focus_sessions (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            label       TEXT NOT NULL,
+            duration_min INTEGER NOT NULL DEFAULT 25,
+            started_at  TEXT NOT NULL,
+            ended_at    TEXT
+        );
+        CREATE TABLE IF NOT EXISTS habits (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT NOT NULL,
+            description TEXT,
+            enabled     INTEGER NOT NULL DEFAULT 1,
+            created_at  TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS habit_logs (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            habit_id    INTEGER NOT NULL,
+            logged_at   TEXT NOT NULL,
+            note        TEXT
         );",
     )?;
     Ok(())

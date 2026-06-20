@@ -1074,7 +1074,7 @@ pub async fn project_delete(db: State<'_, Db>, id: i64) -> Result<()> {
 #[tauri::command]
 pub async fn project_open_in_editor(path: String) -> Result<()> {
     // Try VS Code first, then Cursor, then system default
-    let editors = ["code", "cursor", "zed"];
+    let editors = ["cursor", "code", "zed"];
     for editor in &editors {
         if std::process::Command::new(editor).arg(&path).spawn().is_ok() {
             return Ok(());
@@ -1211,4 +1211,170 @@ pub async fn fathom_process_recent_meeting(db: State<'_, Db>) -> Result<String> 
         Some(doc_id),
     )?;
     Ok(content)
+}
+
+// --- News --------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn news_fetch_latest() -> Result<String> {
+    let stories = crate::integrations::news::top_stories(15).await?;
+    Ok(crate::integrations::news::format_digest(&stories))
+}
+
+// --- Reading list ------------------------------------------------------------
+
+#[tauri::command]
+pub async fn reading_list_add(db: State<'_, Db>, url: String, title: String) -> Result<crate::db::ReadingListItem> {
+    let id = db.reading_list_add(&url, &title)?;
+    Ok(crate::db::ReadingListItem {
+        id,
+        url,
+        title,
+        summary: None,
+        tags: None,
+        read: false,
+        created_at: chrono::Utc::now().to_rfc3339(),
+    })
+}
+
+#[tauri::command]
+pub async fn reading_list_get(db: State<'_, Db>) -> Result<Vec<crate::db::ReadingListItem>> {
+    db.reading_list_get()
+}
+
+#[tauri::command]
+pub async fn reading_list_summarize(db: State<'_, Db>, id: i64) -> Result<String> {
+    let items = db.reading_list_get()?;
+    let Some(item) = items.iter().find(|i| i.id == id) else {
+        return Err(Error::Provider("Item not found".into()));
+    };
+    let provider = db.get_setting("provider")?.unwrap_or_else(|| "ollama".into());
+    let model = db.get_setting("model")?.unwrap_or_default();
+    let ollama_host = db.get_setting("ollama_host")?.unwrap_or_else(|| providers::DEFAULT_OLLAMA_HOST.into());
+    let api_key = secrets::get_api_key(&provider)?;
+    let turns = vec![
+        ChatTurn { role: "system".into(), content: "Summarize this article URL in 3-5 bullet points for a busy professional. Focus on key insights and actionable takeaways.".into() },
+        ChatTurn { role: "user".into(), content: format!("URL: {}\nTitle: {}", item.url, item.title) },
+    ];
+    let summary = providers::complete(&provider, &model, api_key, &ollama_host, &turns).await?;
+    db.reading_list_update_summary(id, &summary)?;
+    Ok(summary)
+}
+
+#[tauri::command]
+pub async fn reading_list_delete(db: State<'_, Db>, id: i64) -> Result<()> {
+    db.reading_list_delete(id)
+}
+
+// --- Focus sessions ----------------------------------------------------------
+
+#[tauri::command]
+pub async fn focus_start(db: State<'_, Db>, label: String, duration_min: i32) -> Result<crate::db::FocusSession> {
+    let id = db.focus_start(&label, duration_min)?;
+    // Schedule a notification when time is up
+    let _notif_title = format!("Focus session complete: {label}");
+    let _body = format!("Your {duration_min}-minute focus block is done. Time for a break.");
+    // We can't sleep here, so just log it and let user end manually
+    Ok(crate::db::FocusSession {
+        id,
+        label,
+        duration_min,
+        started_at: chrono::Utc::now().to_rfc3339(),
+        ended_at: None,
+    })
+}
+
+#[tauri::command]
+pub async fn focus_end(db: State<'_, Db>, id: i64) -> Result<()> {
+    db.focus_end(id)
+}
+
+#[tauri::command]
+pub async fn focus_active(db: State<'_, Db>) -> Result<Option<crate::db::FocusSession>> {
+    db.focus_active()
+}
+
+// --- Habits ------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn habit_create(db: State<'_, Db>, name: String, description: Option<String>) -> Result<crate::db::Habit> {
+    let id = db.habit_create(&name, description.as_deref())?;
+    Ok(crate::db::Habit {
+        id,
+        name,
+        description,
+        enabled: true,
+        created_at: chrono::Utc::now().to_rfc3339(),
+    })
+}
+
+#[tauri::command]
+pub async fn habit_list(db: State<'_, Db>) -> Result<Vec<crate::db::Habit>> {
+    db.habit_list()
+}
+
+#[tauri::command]
+pub async fn habit_log(db: State<'_, Db>, habit_id: i64, note: Option<String>) -> Result<()> {
+    db.habit_log(habit_id, note.as_deref())
+}
+
+#[tauri::command]
+pub async fn habit_logged_today(db: State<'_, Db>, habit_id: i64) -> Result<bool> {
+    db.habit_logged_today(habit_id)
+}
+
+// --- Project status report ---------------------------------------------------
+
+#[tauri::command]
+pub async fn project_status_report(db: State<'_, Db>, project_id: i64) -> Result<String> {
+    let projects = db.list_projects()?;
+    let Some(project) = projects.iter().find(|p| p.id == project_id) else {
+        return Err(Error::Provider("Project not found".into()));
+    };
+    let provider = db.get_setting("provider")?.unwrap_or_else(|| "ollama".into());
+    let model = db.get_setting("model")?.unwrap_or_default();
+    let ollama_host = db.get_setting("ollama_host")?.unwrap_or_else(|| providers::DEFAULT_OLLAMA_HOST.into());
+    let api_key = secrets::get_api_key(&provider)?;
+
+    // Collect file contents for context
+    let root = std::path::Path::new(&project.path);
+    let mut file_contents = String::new();
+    for entry in walkdir_shallow(root) {
+        let content = std::fs::read_to_string(&entry).unwrap_or_default();
+        if !content.is_empty() {
+            file_contents.push_str(&format!("\n### {}\n{content}", entry.display()));
+        }
+    }
+
+    let turns = vec![
+        ChatTurn { role: "system".into(), content: "Generate a concise project status report with: current status, what's done, what's in progress, blockers, and next steps. Use Markdown.".into() },
+        ChatTurn { role: "user".into(), content: format!("Project: {}\nTemplate: {}\n\nFiles:\n{file_contents}", project.name, project.template) },
+    ];
+    let report = providers::complete(&provider, &model, api_key, &ollama_host, &turns).await?;
+    let doc_id = crate::docs::create(&db, &format!("Status Report: {}", project.name), "project_status", &report)?;
+    db.insert_notification(
+        &format!("Status report: {}", project.name),
+        "Project status report is ready in Docs.",
+        Some("open_doc"),
+        Some(doc_id),
+    )?;
+    Ok(report)
+}
+
+fn walkdir_shallow(root: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    let Ok(entries) = std::fs::read_dir(root) else { return files; };
+    for entry in entries.filter_map(|e| e.ok()) {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') { continue; }
+        if path.is_file() {
+            if let Some(ext) = path.extension() {
+                if matches!(ext.to_str(), Some("md" | "txt" | "rs" | "ts" | "tsx" | "py" | "js" | "toml")) {
+                    files.push(path);
+                }
+            }
+        }
+    }
+    files
 }

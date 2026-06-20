@@ -268,6 +268,18 @@ async fn execute_routine(app: &AppHandle, item: &DueRoutine) -> Result<()> {
         .body(&preview)
         .show();
 
+    // Deliver via WhatsApp or Telegram if connected
+    let short_body: String = content.chars().take(1500).collect();
+    if crate::integrations::whatsapp::is_connected().unwrap_or(false) {
+        if let Ok(Some(my_number)) = db.get_setting("whatsapp_my_number") {
+            if !my_number.is_empty() {
+                let _ = crate::integrations::whatsapp::send_message(&my_number, &short_body).await;
+            }
+        }
+    } else if crate::integrations::telegram::is_connected().unwrap_or(false) {
+        let _ = crate::integrations::telegram::send_message(&short_body).await;
+    }
+
     db.mark_routine_run(item.routine.id)?;
     if let Some(ref key) = item.dedupe_key {
         db.record_routine_dedupe(item.routine.id, key)?;
@@ -358,6 +370,23 @@ async fn gather_context(
                     .map(|m| format!("- {}", m.title.as_deref().unwrap_or("(untitled meeting)")))
                     .collect();
                 parts.push(format!("### Recent Fathom meetings\n{}", lines.join("\n")));
+            }
+        }
+    }
+
+    if routine.builtin_id.as_deref() == Some("tech_news") {
+        if let Ok(stories) = crate::integrations::news::top_stories(10).await {
+            let digest = crate::integrations::news::format_digest(&stories);
+            parts.push(format!("### Hacker News Top Stories\n{digest}"));
+        }
+    }
+
+    if routine.builtin_id.as_deref() == Some("morning_briefing") {
+        if let (Ok(Some(lat_str)), Ok(Some(lon_str))) = (db.get_setting("location_lat"), db.get_setting("location_lon")) {
+            if let (Ok(lat), Ok(lon)) = (lat_str.parse::<f64>(), lon_str.parse::<f64>()) {
+                if let Ok(weather) = crate::integrations::weather::fetch(lat, lon).await {
+                    parts.push(format!("### Weather\n{}", crate::integrations::weather::format_summary(&weather)));
+                }
             }
         }
     }

@@ -333,6 +333,17 @@ export default function Projects() {
                 <Button size="sm" variant="ghost" onClick={() => openInEditor(activeProject.path)}>
                   <ExternalLink size={12} /> Open in Editor
                 </Button>
+                <Button size="sm" variant="ghost" onClick={async () => {
+                  if (!activeProject) return;
+                  try {
+                    await api.projectStatusReport(activeProject.id);
+                    // Report saved as doc + notification
+                  } catch {
+                    // ignore
+                  }
+                }}>
+                  <FileText size={12} /> Status Report
+                </Button>
               </div>
             </div>
             <div className="flex-1 overflow-y-auto p-6">

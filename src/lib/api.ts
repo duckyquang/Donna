@@ -209,6 +209,32 @@ export interface ProjectFile {
   is_dir: boolean;
 }
 
+export interface ReadingListItem {
+  id: number;
+  url: string;
+  title: string;
+  summary: string | null;
+  tags: string | null;
+  read: boolean;
+  created_at: string;
+}
+
+export interface FocusSession {
+  id: number;
+  label: string;
+  duration_min: number;
+  started_at: string;
+  ended_at: string | null;
+}
+
+export interface Habit {
+  id: number;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  created_at: string;
+}
+
 function toEvent(e: RawCalendarEvent): CalendarEvent {
   return {
     id: e.id,
@@ -791,4 +817,27 @@ export const api = {
 
   // --- Fathom extra ---
   fathomProcessRecentMeeting: () => invoke<string>("fathom_process_recent_meeting"),
+
+  // --- News ---
+  newsFetchLatest: () => invoke<string>("news_fetch_latest"),
+
+  // --- Reading list ---
+  readingListAdd: (url: string, title: string) => invoke<ReadingListItem>("reading_list_add", { url, title }),
+  readingListGet: () => invoke<ReadingListItem[]>("reading_list_get"),
+  readingListSummarize: (id: number) => invoke<string>("reading_list_summarize", { id }),
+  readingListDelete: (id: number) => invoke<void>("reading_list_delete", { id }),
+
+  // --- Focus sessions ---
+  focusStart: (label: string, durationMin: number) => invoke<FocusSession>("focus_start", { label, duration_min: durationMin }),
+  focusEnd: (id: number) => invoke<void>("focus_end", { id }),
+  focusActive: () => invoke<FocusSession | null>("focus_active"),
+
+  // --- Habits ---
+  habitCreate: (name: string, description?: string) => invoke<Habit>("habit_create", { name, description: description ?? null }),
+  habitList: () => invoke<Habit[]>("habit_list"),
+  habitLog: (habitId: number, note?: string) => invoke<void>("habit_log", { habit_id: habitId, note: note ?? null }),
+  habitLoggedToday: (habitId: number) => invoke<boolean>("habit_logged_today", { habit_id: habitId }),
+
+  // --- Project extras ---
+  projectStatusReport: (projectId: number) => invoke<string>("project_status_report", { project_id: projectId }),
 };

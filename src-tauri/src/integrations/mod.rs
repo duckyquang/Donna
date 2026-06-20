@@ -8,9 +8,11 @@ pub mod fathom;
 pub mod github;
 pub mod google;
 pub mod linear;
+pub mod news;
 pub mod notion;
 pub mod slack;
 pub mod telegram;
+pub mod weather;
 pub mod whatsapp;
 
 use serde::Serialize;

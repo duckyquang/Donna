@@ -7,28 +7,52 @@ export interface LayoutPoint {
 
 type SimNode = { x: number; y: number; vx: number; vy: number };
 
-const LINK_DISTANCE = 100;
-const REPULSION = 4200;
-const CENTER_PULL = 0.03;
-const DAMPING = 0.78;
+const LINK_DISTANCE = 140;
+const REPULSION = 6000;
+const CLUSTER_PULL = 0.07;
+const CENTER_PULL = 0.006;
+const DAMPING = 0.82;
+const CLUSTER_RADIUS = 380;
 
-/** Obsidian-style force-directed layout — nodes spread naturally, edges pull linked pairs together. */
+export function computeClusterTargets(groups: string[]): Map<string, LayoutPoint> {
+  const unique = [...new Set(groups)].filter(Boolean).sort();
+  if (unique.length === 0) return new Map();
+  return new Map(
+    unique.map((g, i) => [
+      g,
+      {
+        x: Math.cos((2 * Math.PI * i) / unique.length) * CLUSTER_RADIUS,
+        y: Math.sin((2 * Math.PI * i) / unique.length) * CLUSTER_RADIUS,
+      },
+    ])
+  );
+}
+
+/** Force-directed layout with cluster grouping support. Nodes in the same group
+ *  are attracted toward a shared centroid; different groups push each other apart. */
 export function forceLayout(
-  nodes: { id: string }[],
+  nodes: { id: string; group?: string }[],
   edges: KgEdge[],
-  iterations = 180
+  iterations = 280
 ): Map<string, LayoutPoint> {
   if (nodes.length === 0) return new Map();
 
+  const groupOf = new Map(nodes.map((n) => [n.id, n.group ?? ""]));
+  const groups = [...new Set(nodes.map((n) => n.group ?? ""))].filter(Boolean);
+  const clusterTargets = computeClusterTargets(groups);
+
   const sim = ForceSim.create(
     nodes.map((n) => n.id),
-    edges
+    edges,
+    groupOf,
+    clusterTargets
   );
-  const coolingSteps = Math.max(iterations, 1);
-  for (let iter = 0; iter < coolingSteps; iter++) {
-    const cooling = 1 - iter / coolingSteps;
+
+  for (let iter = 0; iter < iterations; iter++) {
+    const cooling = 1 - iter / iterations;
     sim.tick(undefined, cooling);
   }
+
   return sim.positions();
 }
 
@@ -36,34 +60,53 @@ export function connectionCount(id: string, edges: KgEdge[]): number {
   return edges.filter((e) => e.source === id || e.target === id).length;
 }
 
-/** Live force simulation for interactive dragging. */
 export class ForceSim {
   private sim = new Map<string, SimNode>();
   private nodeIds: string[];
   private links: KgEdge[];
+  private groupOf: Map<string, string>;
+  private clusterTargets: Map<string, LayoutPoint>;
 
-  private constructor(nodeIds: string[], links: KgEdge[]) {
+  private constructor(
+    nodeIds: string[],
+    links: KgEdge[],
+    groupOf: Map<string, string>,
+    clusterTargets: Map<string, LayoutPoint>
+  ) {
     this.nodeIds = nodeIds;
     this.links = links.filter(
       (e) => nodeIds.includes(e.source) && nodeIds.includes(e.target)
     );
+    this.groupOf = groupOf;
+    this.clusterTargets = clusterTargets;
     for (const id of nodeIds) {
       this.sim.set(id, { x: 0, y: 0, vx: 0, vy: 0 });
     }
   }
 
-  static create(nodeIds: string[], links: KgEdge[]): ForceSim {
-    const inst = new ForceSim(nodeIds, links);
+  static create(
+    nodeIds: string[],
+    links: KgEdge[],
+    groupOf: Map<string, string> = new Map(),
+    clusterTargets: Map<string, LayoutPoint> = new Map()
+  ): ForceSim {
+    const inst = new ForceSim(nodeIds, links, groupOf, clusterTargets);
     nodeIds.forEach((id, i) => {
+      const group = groupOf.get(id) ?? "";
+      const centroid = clusterTargets.get(group);
+      const baseX = centroid?.x ?? 0;
+      const baseY = centroid?.y ?? 0;
+
       let hash = 0;
       for (let c = 0; c < id.length; c++) {
         hash = id.charCodeAt(c) + ((hash << 5) - hash);
       }
-      const angle = (2 * Math.PI * i) / Math.max(nodeIds.length, 1) + (hash % 360) * 0.002;
-      const radius = 120 + (Math.abs(hash) % 60);
+      const jitter = 50 + (Math.abs(hash) % 40);
+      const angle =
+        (2 * Math.PI * i) / Math.max(nodeIds.length, 1) + (hash % 100) * 0.063;
       const n = inst.sim.get(id)!;
-      n.x = Math.cos(angle) * radius;
-      n.y = Math.sin(angle) * radius;
+      n.x = baseX + Math.cos(angle) * jitter;
+      n.y = baseY + Math.sin(angle) * jitter;
     });
     return inst;
   }
@@ -71,9 +114,11 @@ export class ForceSim {
   static fromLayout(
     nodeIds: string[],
     links: KgEdge[],
-    layout: Map<string, LayoutPoint>
+    layout: Map<string, LayoutPoint>,
+    groupOf: Map<string, string> = new Map(),
+    clusterTargets: Map<string, LayoutPoint> = new Map()
   ): ForceSim {
-    const inst = new ForceSim(nodeIds, links);
+    const inst = new ForceSim(nodeIds, links, groupOf, clusterTargets);
     for (const id of nodeIds) {
       const p = layout.get(id) ?? { x: 0, y: 0 };
       const n = inst.sim.get(id)!;
@@ -85,7 +130,6 @@ export class ForceSim {
     return inst;
   }
 
-  /** Advance physics one step. Pin a node while dragging so linked nodes follow. */
   tick(pinned?: { id: string; x: number; y: number }, cooling = 1) {
     if (pinned) {
       const p = this.sim.get(pinned.id);
@@ -96,72 +140,70 @@ export class ForceSim {
         p.vy = 0;
       }
     }
-
-    const scaled = this.scaledForces(cooling);
-    scaled(this.nodeIds, this.sim, this.links, pinned?.id);
+    this.applyForces(cooling, pinned?.id);
   }
 
-  private scaledForces(cooling: number) {
-    return (
-      nodeIds: string[],
-      sim: Map<string, SimNode>,
-      links: KgEdge[],
-      pinnedId?: string
-    ) => {
-      for (let i = 0; i < nodeIds.length; i++) {
-        for (let j = i + 1; j < nodeIds.length; j++) {
-          const idA = nodeIds[i]!;
-          const idB = nodeIds[j]!;
-          const a = sim.get(idA)!;
-          const b = sim.get(idB)!;
-          let dx = a.x - b.x;
-          let dy = a.y - b.y;
-          let distSq = dx * dx + dy * dy;
-          if (distSq < 1) distSq = 1;
-          const force = (REPULSION / distSq) * cooling;
-          const dist = Math.sqrt(distSq);
-          dx /= dist;
-          dy /= dist;
-          if (idA !== pinnedId) {
-            a.vx += dx * force;
-            a.vy += dy * force;
-          }
-          if (idB !== pinnedId) {
-            b.vx -= dx * force;
-            b.vy -= dy * force;
-          }
-        }
-      }
+  private applyForces(cooling: number, pinnedId?: string) {
+    const { nodeIds, sim, links, groupOf, clusterTargets } = this;
 
-      for (const link of links) {
-        const a = sim.get(link.source);
-        const b = sim.get(link.target);
-        if (!a || !b) continue;
-        let dx = b.x - a.x;
-        let dy = b.y - a.y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const force = ((dist - LINK_DISTANCE) / dist) * 0.12 * cooling;
-        if (link.source !== pinnedId) {
-          a.vx += dx * force;
-          a.vy += dy * force;
-        }
-        if (link.target !== pinnedId) {
-          b.vx -= dx * force;
-          b.vy -= dy * force;
-        }
+    // Repulsion (stronger between different clusters)
+    for (let i = 0; i < nodeIds.length; i++) {
+      for (let j = i + 1; j < nodeIds.length; j++) {
+        const idA = nodeIds[i]!;
+        const idB = nodeIds[j]!;
+        const a = sim.get(idA)!;
+        const b = sim.get(idB)!;
+        let dx = a.x - b.x;
+        let dy = a.y - b.y;
+        let distSq = dx * dx + dy * dy;
+        if (distSq < 1) distSq = 1;
+        const dist = Math.sqrt(distSq);
+        const sameGroup =
+          (groupOf.get(idA) ?? "") === (groupOf.get(idB) ?? "");
+        const rep = (REPULSION * (sameGroup ? 1 : 1.8)) / distSq * cooling;
+        dx /= dist;
+        dy /= dist;
+        if (idA !== pinnedId) { a.vx += dx * rep; a.vy += dy * rep; }
+        if (idB !== pinnedId) { b.vx -= dx * rep; b.vy -= dy * rep; }
       }
+    }
 
-      for (const id of nodeIds) {
-        if (id === pinnedId) continue;
-        const n = sim.get(id)!;
-        n.vx -= n.x * CENTER_PULL * cooling;
-        n.vy -= n.y * CENTER_PULL * cooling;
-        n.vx *= DAMPING;
-        n.vy *= DAMPING;
-        n.x += n.vx;
-        n.y += n.vy;
+    // Link attraction
+    for (const link of links) {
+      const a = sim.get(link.source);
+      const b = sim.get(link.target);
+      if (!a || !b) continue;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      const force = ((dist - LINK_DISTANCE) / dist) * 0.11 * cooling;
+      if (link.source !== pinnedId) { a.vx += dx * force; a.vy += dy * force; }
+      if (link.target !== pinnedId) { b.vx -= dx * force; b.vy -= dy * force; }
+    }
+
+    // Cluster pull toward group centroid
+    for (const id of nodeIds) {
+      if (id === pinnedId) continue;
+      const n = sim.get(id)!;
+      const group = groupOf.get(id) ?? "";
+      const centroid = clusterTargets.get(group);
+      if (centroid) {
+        n.vx += (centroid.x - n.x) * CLUSTER_PULL * cooling;
+        n.vy += (centroid.y - n.y) * CLUSTER_PULL * cooling;
       }
-    };
+    }
+
+    // Weak center pull + damping + integrate
+    for (const id of nodeIds) {
+      if (id === pinnedId) continue;
+      const n = sim.get(id)!;
+      n.vx -= n.x * CENTER_PULL * cooling;
+      n.vy -= n.y * CENTER_PULL * cooling;
+      n.vx *= DAMPING;
+      n.vy *= DAMPING;
+      n.x += n.vx;
+      n.y += n.vy;
+    }
   }
 
   positions(): Map<string, LayoutPoint> {

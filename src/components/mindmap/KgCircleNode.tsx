@@ -4,44 +4,72 @@ import type { NodeProps } from "@xyflow/react";
 export type KgCircleNodeData = {
   label: string;
   color: string;
-  size: number;
+  note: string;
+  nodeType: string;
+  group: string;
   isFolder?: boolean;
 };
 
-function nodeGlow(color: string, selected: boolean, strong = false) {
-  const spread = strong ? 1.25 : 1;
-  if (selected) {
-    return `0 0 0 2px #fff, 0 0 ${12 * spread}px ${color}ee, 0 0 ${24 * spread}px ${color}bb, 0 0 ${40 * spread}px ${color}66`;
-  }
-  return `0 0 ${8 * spread}px ${color}dd, 0 0 ${16 * spread}px ${color}99, 0 0 ${28 * spread}px ${color}55`;
-}
+export const CARD_W = 168;
+export const CARD_H = 68;
+export const PILL_W = 116;
+export const PILL_H = 30;
 
 function KgCircleNodeComponent({ data, selected }: NodeProps) {
   const d = data as KgCircleNodeData;
-  const s = d.isFolder ? Math.max(d.size, 22) : d.size;
-  const circleClass = d.isFolder
-    ? `kg-node-circle kg-node-circle--folder${selected ? " kg-node-circle--selected" : ""}`
-    : `kg-node-circle${selected ? " kg-node-circle--selected" : ""}`;
+
+  if (d.isFolder) {
+    return (
+      <div
+        className={`kg-folder-pill${selected ? " kg-folder-pill--selected" : ""}`}
+        style={{
+          borderColor: selected ? d.color : `${d.color}80`,
+          boxShadow: selected
+            ? `0 0 14px ${d.color}55, 0 0 0 1px ${d.color}40`
+            : `0 0 6px ${d.color}22`,
+        }}
+        title={d.label}
+      >
+        <span
+          className="kg-folder-pill__dot"
+          style={{ background: d.color }}
+        />
+        <span className="kg-folder-pill__label">{d.label}</span>
+      </div>
+    );
+  }
+
+  const notePreview = d.note
+    ? d.note.replace(/[*#_`>]/g, "").trim().slice(0, 110)
+    : "";
 
   return (
     <div
-      className={d.isFolder ? "kg-node kg-node--folder" : "kg-node"}
-      style={{ width: s, height: s }}
+      className={`kg-card-node${selected ? " kg-card-node--selected" : ""}`}
+      style={{
+        borderColor: selected ? `${d.color}cc` : `${d.color}30`,
+        boxShadow: selected
+          ? `0 0 0 1px ${d.color}60, 0 0 20px ${d.color}30, 0 4px 16px rgba(0,0,0,0.5)`
+          : `0 2px 10px rgba(0,0,0,0.35)`,
+      }}
       title={d.label}
     >
-      <div
-        className={circleClass}
-        style={{
-          width: s,
-          height: s,
-          backgroundColor: d.color,
-          borderColor: "rgba(255, 255, 255, 0.28)",
-          boxShadow: nodeGlow(d.color, !!selected, d.isFolder),
-        }}
-      />
-      <span className={`kg-node-label${d.isFolder ? " kg-node-label--folder" : ""}`}>
-        {d.label}
-      </span>
+      <div className="kg-card-stripe" style={{ background: d.color }} />
+      <div className="kg-card-body">
+        <div className="kg-card-header">
+          <span className="kg-card-label">{d.label}</span>
+          {d.nodeType && d.nodeType !== "info" && (
+            <span className="kg-card-type" style={{ color: d.color }}>
+              {d.nodeType}
+            </span>
+          )}
+        </div>
+        {notePreview ? (
+          <p className="kg-card-note">{notePreview}</p>
+        ) : (
+          <p className="kg-card-note kg-card-note--empty">No description yet</p>
+        )}
+      </div>
     </div>
   );
 }

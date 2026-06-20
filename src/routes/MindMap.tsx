@@ -12,20 +12,27 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Plus, RefreshCw, Trash2 } from "lucide-react";
-import { CategoryPicker } from "../components/mindmap/CategoryPicker";
-import { KgCircleNode, type KgCircleNodeData } from "../components/mindmap/KgCircleNode";
+import {
+  KgCircleNode,
+  type KgCircleNodeData,
+  CARD_W,
+  CARD_H,
+  PILL_W,
+  PILL_H,
+} from "../components/mindmap/KgCircleNode";
 import { MindMapGraphLinks } from "../components/mindmap/MindMapGraphLinks";
 import { NodeDetailPanel } from "../components/mindmap/NodeDetailPanel";
 import { NodeEditor } from "../components/mindmap/NodeEditor";
-import { api, type KgGraph, type KgEdge, type KgNode } from "../lib/api";
+import { api, type KgGraph, type KgNode } from "../lib/api";
 import { useConfig } from "../lib/useConfig";
-import { ForceSim, connectionCount, forceLayout } from "../lib/mindmap/forceLayout";
+import { ForceSim, forceLayout } from "../lib/mindmap/forceLayout";
 import { resolveGraphEdges } from "../lib/mindmap/resolveEdges";
 import { Spinner } from "../components/ui";
 
 const nodeTypes: NodeTypes = { kgCircle: KgCircleNode };
 
 const GROUP_COLORS: Record<string, string> = {
+  "About You": "#a78bfa",
   People: "#e8a55a",
   Projects: "#5b9bd5",
   Preferences: "#c9742a",
@@ -33,21 +40,13 @@ const GROUP_COLORS: Record<string, string> = {
   Places: "#f472b6",
   Health: "#f87171",
   Topics: "#facc15",
+  Work: "#60a5fa",
+  Study: "#34d399",
+  Feedback: "#94a3b8",
 };
 
 function topCategory(group: string): string {
   return (group.split(" / ")[0] ?? group).trim();
-}
-
-function nodeCategory(node: KgNode): string {
-  return topCategory(node.folder[0] ?? node.group ?? "Topics");
-}
-
-function filterByCategory(graph: KgGraph, category: string): KgGraph {
-  const nodes = graph.nodes.filter((n) => nodeCategory(n) === category);
-  const ids = new Set(nodes.map((n) => n.id));
-  const edges = graph.edges.filter((e) => ids.has(e.source) && ids.has(e.target));
-  return { nodes, edges };
 }
 
 function colorFor(group: string): string {
@@ -55,20 +54,15 @@ function colorFor(group: string): string {
   if (GROUP_COLORS[top]) return GROUP_COLORS[top];
   let hash = 0;
   for (let i = 0; i < top.length; i++) hash = top.charCodeAt(i) + ((hash << 5) - hash);
-  return `hsl(${Math.abs(hash) % 360} 55% 55%)`;
+  return `hsl(${Math.abs(hash) % 360} 55% 60%)`;
 }
 
-function nodeSize(node: KgNode, edges: KgEdge[]): number {
-  const links = connectionCount(node.id, edges);
-  if (node.type === "folder") {
-    return 22 + Math.min(links, 12) * 1.5;
-  }
-  return 10 + Math.min(links, 10) * 1.8;
+function nodeCategory(node: KgNode): string {
+  return node.folder[0] ?? topCategory(node.group ?? "");
 }
 
 function nodeDimensions(d: KgCircleNodeData) {
-  const s = d.isFolder ? Math.max(d.size, 22) : d.size;
-  return { w: s, h: s };
+  return d.isFolder ? { w: PILL_W, h: PILL_H } : { w: CARD_W, h: CARD_H };
 }
 
 function centerToPosition(cx: number, cy: number, w: number, h: number) {
@@ -77,19 +71,15 @@ function centerToPosition(cx: number, cy: number, w: number, h: number) {
 
 function buildFlowNodes(
   graph: KgGraph,
-  resolvedEdges: KgEdge[],
   positions: Map<string, { x: number; y: number }>
 ): Node[] {
   return graph.nodes.map((m) => {
-    const size = nodeSize(m, resolvedEdges);
     const isFolder = m.type === "folder";
+    const { w, h } = isFolder
+      ? { w: PILL_W, h: PILL_H }
+      : { w: CARD_W, h: CARD_H };
+    const cat = nodeCategory(m);
     const pos = positions.get(m.id) ?? { x: 0, y: 0 };
-    const { w, h } = nodeDimensions({
-      label: m.label,
-      color: "",
-      size,
-      isFolder,
-    });
     return {
       id: m.id,
       type: "kgCircle",
@@ -100,8 +90,10 @@ function buildFlowNodes(
       height: h,
       data: {
         label: m.label,
-        color: colorFor(m.folder[0] ?? m.group ?? "Topics"),
-        size,
+        color: colorFor(cat),
+        note: m.note ?? "",
+        nodeType: m.type,
+        group: cat,
         isFolder,
       } satisfies KgCircleNodeData,
       draggable: true,
@@ -126,46 +118,28 @@ export default function MindMap() {
   const [loading, setLoading] = useState(true);
   const [resetting, setResetting] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<KgNode | "new" | null>(null);
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
   const simRef = useRef<ForceSim | null>(null);
   const didDragRef = useRef(false);
 
-  const groupsPresent = useMemo(
-    () =>
-      [...new Set(graph.nodes.map((n) => nodeCategory(n)))].sort(),
-    [graph.nodes]
-  );
-
-  useEffect(() => {
-    if (groupsPresent.length === 0) {
-      setActiveCategory(null);
-      return;
-    }
-    setActiveCategory((prev) =>
-      prev && groupsPresent.includes(prev) ? prev : groupsPresent[0]!
-    );
-  }, [groupsPresent]);
-
-  const filteredGraph = useMemo(() => {
-    if (!activeCategory) return { nodes: [], edges: [] };
-    return filterByCategory(graph, activeCategory);
-  }, [graph, activeCategory]);
-
   const resolvedEdges = useMemo(
-    () =>
-      filteredGraph.nodes.length > 0 ? resolveGraphEdges(filteredGraph) : [],
-    [filteredGraph]
+    () => (graph.nodes.length > 0 ? resolveGraphEdges(graph) : []),
+    [graph]
   );
 
   const nodeColorById = useMemo(
     () =>
       new Map(
-        filteredGraph.nodes.map((n) => [n.id, colorFor(n.folder[0] ?? n.group ?? "Topics")])
+        graph.nodes.map((n) => [n.id, colorFor(nodeCategory(n))])
       ),
-    [filteredGraph.nodes]
+    [graph.nodes]
+  );
+
+  const clusterGroups = useMemo(
+    () => [...new Set(graph.nodes.map(nodeCategory))].sort(),
+    [graph.nodes]
   );
 
   const load = useCallback(async () => {
@@ -197,27 +171,25 @@ export default function MindMap() {
   }, [load]);
 
   useEffect(() => {
-    if (filteredGraph.nodes.length === 0) {
+    if (graph.nodes.length === 0) {
       setRfNodes([]);
       simRef.current = null;
       return;
     }
-    const layout = forceLayout(filteredGraph.nodes, resolvedEdges);
-    const nodeIds = filteredGraph.nodes.map((n) => n.id);
+    const nodesWithGroup = graph.nodes.map((n) => ({
+      id: n.id,
+      group: nodeCategory(n),
+    }));
+    const layout = forceLayout(nodesWithGroup, resolvedEdges);
+    const nodeIds = graph.nodes.map((n) => n.id);
     simRef.current = ForceSim.fromLayout(nodeIds, resolvedEdges, layout);
-    setRfNodes(buildFlowNodes(filteredGraph, resolvedEdges, layout));
-  }, [filteredGraph, resolvedEdges, setRfNodes]);
+    setRfNodes(buildFlowNodes(graph, layout));
+  }, [graph, resolvedEdges, setRfNodes]);
 
   const nodeById = useMemo(
-    () => new Map(filteredGraph.nodes.map((n) => [n.id, n])),
-    [filteredGraph.nodes]
+    () => new Map(graph.nodes.map((n) => [n.id, n])),
+    [graph.nodes]
   );
-
-  const handleCategoryChange = (category: string) => {
-    setActiveCategory(category);
-    setSelectedId(null);
-    setEditing(null);
-  };
 
   const selectedNode = selectedId ? nodeById.get(selectedId) ?? null : null;
 
@@ -235,32 +207,27 @@ export default function MindMap() {
     didDragRef.current = true;
     const sim = simRef.current;
     if (!sim) return;
-
-    const w = node.width ?? (node.data as KgCircleNodeData).size;
-    const h = node.height ?? (node.data as KgCircleNodeData).size;
-    const cx = node.position.x + w / 2;
-    const cy = node.position.y + h / 2;
+    const data = node.data as KgCircleNodeData;
+    const { w, h } = nodeDimensions(data);
+    const cx = node.position.x + (node.width ?? w) / 2;
+    const cy = node.position.y + (node.height ?? h) / 2;
     for (let i = 0; i < 5; i++) {
       sim.tick({ id: node.id, x: cx, y: cy });
     }
-
     setRfNodes((nds) => applySimPositions(nds, sim));
   };
 
   const onNodeDragStop: OnNodeDrag = (_e, node) => {
     const sim = simRef.current;
     if (!sim) return;
-
-    const w = node.width ?? (node.data as KgCircleNodeData).size;
-    const h = node.height ?? (node.data as KgCircleNodeData).size;
-    const cx = node.position.x + w / 2;
-    const cy = node.position.y + h / 2;
+    const data = node.data as KgCircleNodeData;
+    const { w, h } = nodeDimensions(data);
+    const cx = node.position.x + (node.width ?? w) / 2;
+    const cy = node.position.y + (node.height ?? h) / 2;
     for (let i = 0; i < 12; i++) {
       sim.tick({ id: node.id, x: cx, y: cy }, 0.6);
     }
     setRfNodes((nds) => applySimPositions(nds, sim));
-
-    // Reset after drag so the next tap opens details instead of being blocked.
     window.setTimeout(() => {
       didDragRef.current = false;
     }, 0);
@@ -287,18 +254,18 @@ export default function MindMap() {
     const childIds = new Set(
       resolvedEdges.filter((e) => e.source === selectedId).map((e) => e.target)
     );
-    return filteredGraph.nodes.filter((n) => childIds.has(n.id));
-  }, [selectedId, filteredGraph.nodes, resolvedEdges]);
+    return graph.nodes.filter((n) => childIds.has(n.id));
+  }, [selectedId, graph.nodes, resolvedEdges]);
 
   return (
     <div className="relative h-full w-full bg-donna-bg">
       <header className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between border-b border-white/10 bg-donna-bg/80 px-6 py-3 backdrop-blur">
         <div>
-          <h1 className="text-sm font-semibold text-white">Mind Map</h1>
+          <h1 className="text-sm font-semibold text-white">Memory Map</h1>
           <p className="text-xs text-gray-500">
-            Donna&apos;s living map of what she knows about you ·{" "}
-            {activeCategory ? `${filteredGraph.nodes.length} in ${activeCategory}` : "0 nodes"}{" "}
-            · drag to rearrange · click a node to read its details
+            {graph.nodes.length > 0
+              ? `${graph.nodes.length} nodes across ${clusterGroups.length} clusters · drag to rearrange · click a node for details`
+              : "Chat with Donna to build her map of you"}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -317,7 +284,7 @@ export default function MindMap() {
             className="flex items-center gap-2 rounded-lg border border-red-500/30 px-3 py-1.5 text-xs text-red-300 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Trash2 size={14} />
-            Reset knowledge
+            Reset
           </button>
           <button
             onClick={load}
@@ -337,24 +304,15 @@ export default function MindMap() {
               Donna hasn&apos;t mapped anything yet.
             </p>
             <p className="mt-1 text-xs text-gray-500">
-              Chat with her and tell her about yourself — your people, projects, and
-              routines. She&apos;ll build this map automatically as you talk.
+              Chat with her and tell her about yourself — your people, projects,
+              and routines. She&apos;ll build this map automatically as you talk.
             </p>
           </div>
         </div>
       ) : (
-        <div className="flex h-full w-full pt-[52px] transition-[padding] duration-300 ease-out">
-          <div className="mindmap relative min-w-0 flex-1 transition-[flex-grow] duration-300 ease-out">
-            {activeCategory && groupsPresent.length > 0 && (
-              <CategoryPicker
-                categories={groupsPresent}
-                active={activeCategory}
-                colorFor={colorFor}
-                onChange={handleCategoryChange}
-              />
-            )}
+        <div className="flex h-full w-full pt-[52px]">
+          <div className="mindmap relative min-w-0 flex-1">
             <ReactFlow
-              key={activeCategory ?? "none"}
               nodes={rfNodes}
               edges={[]}
               onNodesChange={onNodesChange}
@@ -372,18 +330,37 @@ export default function MindMap() {
               panOnDrag
               elementsSelectable
               fitView
-            fitViewOptions={{ padding: 0.3 }}
-            proOptions={{ hideAttribution: true }}
-            minZoom={0.15}
-            maxZoom={2.5}
-          >
-            <MindMapGraphLinks
-              edges={resolvedEdges}
-              colorForNode={(id) => nodeColorById.get(id) ?? "#e8a55a"}
-            />
-            <Background color="#ffffff08" gap={32} />
-            <Controls showInteractive={false} />
+              fitViewOptions={{ padding: 0.25 }}
+              proOptions={{ hideAttribution: true }}
+              minZoom={0.1}
+              maxZoom={2}
+            >
+              <MindMapGraphLinks
+                edges={resolvedEdges}
+                colorForNode={(id) => nodeColorById.get(id) ?? "#e8a55a"}
+                colorForGroup={colorFor}
+              />
+              <Background color="#ffffff06" gap={40} size={1} />
+              <Controls showInteractive={false} />
             </ReactFlow>
+
+            {/* Cluster legend */}
+            {clusterGroups.length > 0 && (
+              <div className="mindmap-legend">
+                {clusterGroups.map((g) => (
+                  <div key={g} className="mindmap-legend__item">
+                    <span
+                      className="mindmap-legend__dot"
+                      style={{
+                        background: colorFor(g),
+                        boxShadow: `0 0 5px ${colorFor(g)}99`,
+                      }}
+                    />
+                    <span className="mindmap-legend__label">{g}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {selectedNode && (
@@ -425,14 +402,20 @@ export default function MindMap() {
             className="absolute left-1/2 top-1/2 z-30 w-full max-w-md -translate-x-1/2 -translate-y-1/2 px-4"
           >
             <div className="rounded-2xl border border-white/10 bg-donna-surface p-5 shadow-2xl">
-              <h2 id="reset-knowledge-title" className="text-base font-semibold text-white">
+              <h2
+                id="reset-knowledge-title"
+                className="text-base font-semibold text-white"
+              >
                 Reset all knowledge?
               </h2>
-              <p id="reset-knowledge-desc" className="mt-2 text-sm leading-relaxed text-gray-300">
-                This permanently deletes Donna&apos;s mind map, every chat conversation, and
-                your profile basics. You&apos;ll go through the getting-to-know-you setup
-                again before chatting. Your model and integration settings are kept. This
-                cannot be undone.
+              <p
+                id="reset-knowledge-desc"
+                className="mt-2 text-sm leading-relaxed text-gray-300"
+              >
+                This permanently deletes Donna&apos;s memory map, every chat
+                conversation, and your profile basics. You&apos;ll go through
+                the getting-to-know-you setup again. Your model and integration
+                settings are kept. This cannot be undone.
               </p>
               <div className="mt-5 flex justify-end gap-2">
                 <button

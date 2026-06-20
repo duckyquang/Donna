@@ -57,6 +57,15 @@ pub struct Notification {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Project {
+    pub id: i64,
+    pub name: String,
+    pub template: String,
+    pub path: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Doc {
     pub id: i64,
     pub title: String,
@@ -210,6 +219,16 @@ impl Db {
                 None,
                 Some(30),
                 "Prepare a short briefing for an upcoming meeting: context on attendees, related knowledge, and suggested talking points.",
+            ),
+            (
+                "post_meeting_debrief",
+                "Post-Meeting Debrief",
+                "after_meeting",
+                0,
+                5,
+                None,
+                Some(10),
+                "After a meeting ends, pull the Fathom summary and create action items, follow-ups, and a knowledge base update.",
             ),
         ];
         for (builtin_id, name, schedule_type, hour, minute, day_of_week, minutes_before, prompt) in
@@ -496,6 +515,41 @@ impl Db {
         conn.execute("DELETE FROM kg_embeddings", [])?;
         Ok(())
     }
+
+    // --- Projects ------------------------------------------------------------
+
+    pub fn create_project(&self, name: &str, template: &str, path: &str) -> Result<i64> {
+        let conn = self.0.lock().unwrap();
+        let now = now_iso();
+        conn.execute(
+            "INSERT INTO projects (name, template, path, created_at) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![name, template, path, now],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn list_projects(&self) -> Result<Vec<Project>> {
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, template, path, created_at FROM projects ORDER BY id DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(Project {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                template: row.get(2)?,
+                path: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn delete_project(&self, id: i64) -> Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute("DELETE FROM projects WHERE id = ?1", [id])?;
+        Ok(())
+    }
 }
 
 fn migrate(conn: &Connection) -> Result<()> {
@@ -560,6 +614,13 @@ fn migrate(conn: &Connection) -> Result<()> {
         CREATE TABLE IF NOT EXISTS kg_embeddings (
             node_key TEXT PRIMARY KEY,
             vector   TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS projects (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT NOT NULL,
+            template    TEXT NOT NULL,
+            path        TEXT NOT NULL,
+            created_at  TEXT NOT NULL
         );",
     )?;
     Ok(())

@@ -113,6 +113,22 @@ async fn collect_due_routines(db: &Db, routines: &[Routine]) -> Result<Vec<DueRo
                     }
                 }
             }
+            "after_meeting" => {
+                let minutes = routine.minutes_before.unwrap_or(10);
+                if let Ok(events) = recently_ended_meetings(minutes).await {
+                    for ev in events {
+                        let Some(event_id) = ev.id.clone() else { continue; };
+                        if db.has_routine_dedupe(routine.id, &event_id)? { continue; }
+                        let title = ev.summary.clone().unwrap_or_else(|| "Meeting".into());
+                        let ctx = format!("Meeting just ended: {title}");
+                        due.push(DueRoutine {
+                            routine: routine.clone(),
+                            context: Some(ctx),
+                            dedupe_key: Some(event_id),
+                        });
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -166,6 +182,12 @@ async fn upcoming_meetings(within_minutes: i32) -> Result<Vec<google::CalendarEv
     let now = Local::now();
     let end = now + chrono::Duration::minutes(within_minutes as i64);
     google::list_events(&now.to_rfc3339(), &end.to_rfc3339()).await
+}
+
+async fn recently_ended_meetings(within_minutes: i32) -> Result<Vec<google::CalendarEvent>> {
+    let now = Local::now();
+    let start = now - chrono::Duration::minutes(within_minutes as i64);
+    google::list_events(&start.to_rfc3339(), &now.to_rfc3339()).await
 }
 
 async fn execute_routine(app: &AppHandle, item: &DueRoutine) -> Result<()> {

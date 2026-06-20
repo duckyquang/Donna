@@ -33,6 +33,8 @@ sha2 = "0.10"
 base64 = "0.22"
 rand = "0.8"
 url = "2"
+serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "model", "rustls_backend", "cache"] }
+tokio-util = "0.7"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

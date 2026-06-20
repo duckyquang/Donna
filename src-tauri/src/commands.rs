@@ -10,7 +10,7 @@ use tauri::State;
 use crate::db::{Conversation, Db, Doc, Message, Notification, Routine};
 use crate::embeddings;
 use crate::error::{Error, Result};
-use crate::integrations::{self, github, google, linear, notion, slack, telegram, whatsapp};
+use crate::integrations::{self, discord, github, google, linear, notion, slack, telegram, whatsapp};
 use crate::knowledge;
 use crate::providers::{self, ChatTurn};
 use crate::retrieval;
@@ -1010,4 +1010,205 @@ pub fn whatsapp_disconnect() -> Result<()> {
 #[tauri::command]
 pub async fn whatsapp_send_message(to: String, text: String) -> Result<()> {
     whatsapp::send_message(&to, &text).await
+}
+
+// --- Projects ----------------------------------------------------------------
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProjectFile {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+}
+
+#[tauri::command]
+pub async fn project_list(db: State<'_, Db>) -> Result<Vec<crate::db::Project>> {
+    db.list_projects()
+}
+
+#[tauri::command]
+pub async fn project_create(
+    db: State<'_, Db>,
+    name: String,
+    template: String,
+    path: String,
+) -> Result<crate::db::Project> {
+    // Create the directory structure based on template
+    let project_path = std::path::Path::new(&path);
+    std::fs::create_dir_all(project_path).map_err(|e| Error::Provider(e.to_string()))?;
+
+    match template.as_str() {
+        "coding" => {
+            std::fs::write(project_path.join("README.md"), format!("# {name}\n\nProject description here.\n")).ok();
+            std::fs::write(project_path.join(".gitignore"), "target/\nnode_modules/\n.env\n*.lock\ndist/\n").ok();
+            std::fs::create_dir_all(project_path.join("src")).ok();
+        }
+        "research" => {
+            let paper = format!("# {name}\n\n## Abstract\n\n## Introduction\n\n## Literature Review\n\n## Methodology\n\n## Results\n\n## Discussion\n\n## Conclusion\n\n## References\n");
+            std::fs::write(project_path.join("paper.md"), paper).ok();
+            std::fs::write(project_path.join("notes.md"), "# Research Notes\n\n").ok();
+            std::fs::write(project_path.join("references.md"), "# References\n\n| # | Title | Authors | Year | DOI | Notes |\n|---|-------|---------|------|-----|-------|\n").ok();
+            std::fs::create_dir_all(project_path.join("data")).ok();
+            std::fs::create_dir_all(project_path.join("figures")).ok();
+        }
+        _ => {
+            std::fs::write(project_path.join("README.md"), format!("# {name}\n\n")).ok();
+        }
+    }
+
+    let id = db.create_project(&name, &template, &path)?;
+    Ok(crate::db::Project {
+        id,
+        name,
+        template,
+        path,
+        created_at: chrono::Utc::now().to_rfc3339(),
+    })
+}
+
+#[tauri::command]
+pub async fn project_delete(db: State<'_, Db>, id: i64) -> Result<()> {
+    db.delete_project(id)
+}
+
+#[tauri::command]
+pub async fn project_open_in_editor(path: String) -> Result<()> {
+    // Try VS Code first, then Cursor, then system default
+    let editors = ["code", "cursor", "zed"];
+    for editor in &editors {
+        if std::process::Command::new(editor).arg(&path).spawn().is_ok() {
+            return Ok(());
+        }
+    }
+    open::that(&path).map_err(|e| Error::Provider(e.to_string()))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn project_list_files(project_id: i64, db: State<'_, Db>) -> Result<Vec<ProjectFile>> {
+    let projects = db.list_projects()?;
+    let Some(project) = projects.iter().find(|p| p.id == project_id) else {
+        return Ok(vec![]);
+    };
+    let root = std::path::Path::new(&project.path);
+    let mut files = Vec::new();
+    collect_files(root, root, &mut files, 0)?;
+    Ok(files)
+}
+
+fn collect_files(
+    root: &std::path::Path,
+    dir: &std::path::Path,
+    out: &mut Vec<ProjectFile>,
+    depth: usize,
+) -> Result<()> {
+    if depth > 4 {
+        return Ok(());
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Ok(());
+    };
+    let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
+    entries.sort_by_key(|e| {
+        let is_file = e.file_type().map(|t| t.is_file()).unwrap_or(false);
+        (is_file as u8, e.file_name())
+    });
+    for entry in entries {
+        let entry_path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') && name != ".gitignore" {
+            continue;
+        }
+        let rel = entry_path.strip_prefix(root).unwrap_or(&entry_path);
+        let is_dir = entry_path.is_dir();
+        out.push(ProjectFile {
+            name: name.clone(),
+            path: rel.to_string_lossy().to_string(),
+            is_dir,
+        });
+        if is_dir {
+            collect_files(root, &entry_path, out, depth + 1)?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn project_read_file(project_id: i64, path: String, db: State<'_, Db>) -> Result<String> {
+    let projects = db.list_projects()?;
+    let Some(project) = projects.iter().find(|p| p.id == project_id) else {
+        return Err(Error::Provider("Project not found".into()));
+    };
+    let full_path = std::path::Path::new(&project.path).join(&path);
+    std::fs::read_to_string(&full_path).map_err(|e| Error::Provider(e.to_string()))
+}
+
+#[tauri::command]
+pub async fn project_write_file(project_id: i64, path: String, content: String, db: State<'_, Db>) -> Result<()> {
+    let projects = db.list_projects()?;
+    let Some(project) = projects.iter().find(|p| p.id == project_id) else {
+        return Err(Error::Provider("Project not found".into()));
+    };
+    let full_path = std::path::Path::new(&project.path).join(&path);
+    if let Some(parent) = full_path.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    std::fs::write(&full_path, content).map_err(|e| Error::Provider(e.to_string()))
+}
+
+// --- Discord -----------------------------------------------------------------
+
+#[tauri::command]
+pub async fn discord_set_token(token: String) -> Result<()> {
+    discord::set_token(&token)
+}
+
+#[tauri::command]
+pub async fn discord_disconnect() -> Result<()> {
+    discord::disconnect()
+}
+
+// --- Fathom post-meeting processing -----------------------------------------
+
+#[tauri::command]
+pub async fn fathom_process_recent_meeting(db: State<'_, Db>) -> Result<String> {
+    use crate::integrations::fathom;
+
+    let provider = db.get_setting("provider")?.unwrap_or_else(|| "ollama".into());
+    let model = db.get_setting("model")?.unwrap_or_default();
+    let ollama_host = db.get_setting("ollama_host")?.unwrap_or_else(|| providers::DEFAULT_OLLAMA_HOST.into());
+    let api_key = secrets::get_api_key(&provider)?;
+
+    if !fathom::is_connected().unwrap_or(false) {
+        return Err(Error::Provider("Fathom not connected".into()));
+    }
+    let meetings = fathom::list_recent_meetings(1).await?;
+    let Some(meeting) = meetings.first() else {
+        return Err(Error::Provider("No recent Fathom meetings found".into()));
+    };
+
+    let title = meeting.title.as_deref().unwrap_or("Meeting");
+    let summary = meeting.summary.as_deref().unwrap_or("(no summary)");
+
+    let turns = vec![
+        ChatTurn {
+            role: "system".into(),
+            content: "You are Donna, a proactive personal assistant. Analyze this meeting summary and produce: 1) Key decisions, 2) Action items with owners, 3) Follow-up emails to draft, 4) Things to add to the knowledge base. Use Markdown.".into(),
+        },
+        ChatTurn {
+            role: "user".into(),
+            content: format!("## Meeting: {title}\n\n## Summary\n{summary}"),
+        },
+    ];
+
+    let content = providers::complete(&provider, &model, api_key, &ollama_host, &turns).await?;
+    let doc_title = format!("Post-Meeting: {title}");
+    let doc_id = crate::docs::create(&db, &doc_title, "fathom_post_meeting", &content)?;
+    db.insert_notification(
+        &format!("Meeting processed: {title}"),
+        "Donna has analysed your meeting and created action items.",
+        Some("open_doc"),
+        Some(doc_id),
+    )?;
+    Ok(content)
 }

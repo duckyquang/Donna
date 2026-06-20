@@ -4,6 +4,7 @@ import { Sidebar } from "./components/Sidebar";
 import { useConfig } from "./lib/useConfig";
 import { isDesktopApp } from "./lib/tauri";
 import Chat from "./routes/Chat";
+import Projects from "./routes/Projects";
 import Notifications from "./routes/Notifications";
 import Docs from "./routes/Docs";
 import Calendar from "./routes/Calendar";
@@ -45,6 +46,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/chat" replace />} />
           <Route path="/chat" element={<Chat />} />
+          <Route path="/projects" element={<Projects />} />
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/docs" element={<Docs />} />
           <Route path="/calendar" element={<Calendar />} />

@@ -195,6 +195,20 @@ export interface SlackChannel {
   name: string;
 }
 
+export interface Project {
+  id: number;
+  name: string;
+  template: string;
+  path: string;
+  created_at: string;
+}
+
+export interface ProjectFile {
+  name: string;
+  path: string;
+  is_dir: boolean;
+}
+
 function toEvent(e: RawCalendarEvent): CalendarEvent {
   return {
     id: e.id,
@@ -759,4 +773,22 @@ export const api = {
   kgReindexEmbeddings(): Promise<number> {
     return invoke("kg_reindex_embeddings");
   },
+
+  // --- Projects ---
+  projectList: () => invoke<Project[]>("project_list"),
+  projectCreate: (name: string, template: string, path: string) =>
+    invoke<Project>("project_create", { name, template, path }),
+  projectDelete: (id: number) => invoke<void>("project_delete", { id }),
+  projectOpenInEditor: (path: string) => invoke<void>("project_open_in_editor", { path }),
+  projectListFiles: (projectId: number) => invoke<ProjectFile[]>("project_list_files", { project_id: projectId }),
+  projectReadFile: (projectId: number, path: string) => invoke<string>("project_read_file", { project_id: projectId, path }),
+  projectWriteFile: (projectId: number, path: string, content: string) =>
+    invoke<void>("project_write_file", { project_id: projectId, path, content }),
+
+  // --- Discord ---
+  discordSetToken: (token: string) => invoke<void>("discord_set_token", { token }),
+  discordDisconnect: () => invoke<void>("discord_disconnect"),
+
+  // --- Fathom extra ---
+  fathomProcessRecentMeeting: () => invoke<string>("fathom_process_recent_meeting"),
 };

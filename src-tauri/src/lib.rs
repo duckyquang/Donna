@@ -68,6 +68,12 @@ pub fn run() {
 
             Ok(())
         })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                window.hide().unwrap();
+                api.prevent_close();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::get_config,
             commands::save_config,
@@ -135,6 +141,16 @@ pub fn run() {
             commands::whatsapp_set_credentials,
             commands::whatsapp_disconnect,
             commands::whatsapp_send_message,
+            commands::project_list,
+            commands::project_create,
+            commands::project_delete,
+            commands::project_open_in_editor,
+            commands::project_list_files,
+            commands::project_read_file,
+            commands::project_write_file,
+            commands::discord_set_token,
+            commands::discord_disconnect,
+            commands::fathom_process_recent_meeting,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Donna");

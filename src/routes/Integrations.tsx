@@ -30,6 +30,7 @@ export default function Integrations() {
   const [telegramChatId, setTelegramChatId] = useState("");
   const [whatsappToken, setWhatsappToken] = useState("");
   const [whatsappPhoneId, setWhatsappPhoneId] = useState("");
+  const [discordToken, setDiscordToken] = useState("");
 
   const [gmailMessages, setGmailMessages] = useState<GmailMessage[]>([]);
   const [driveFiles, setDriveFiles] = useState<DriveFile[]>([]);
@@ -379,6 +380,24 @@ export default function Integrations() {
                 <input value={whatsappPhoneId} onChange={(e) => setWhatsappPhoneId(e.target.value)} placeholder="Phone number ID" className={inputClass} />
                 <Button onClick={() => run("whatsapp", () => api.whatsappSetCredentials(whatsappToken.trim(), whatsappPhoneId.trim()))} disabled={busy === "whatsapp" || !whatsappToken.trim() || !whatsappPhoneId.trim()}>
                   {busy === "whatsapp" ? <Spinner /> : <Link2 size={16} />} Connect WhatsApp
+                </Button>
+              </div>
+            )}
+          </Card>
+
+          <Card name="Discord" sub="Send messages via Discord bot" connected={!!status("discord")?.connected}>
+            {status("discord")?.connected ? (
+              <Button variant="danger" onClick={() => run("discord", api.discordDisconnect)} disabled={busy === "discord"}>
+                {busy === "discord" ? <Spinner /> : <Unplug size={16} />} Disconnect
+              </Button>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-xs text-gray-400">
+                  Create a Discord bot at discord.com/developers, add it to your server, and paste its token here. Enable the <strong>MESSAGE_CONTENT</strong> intent in the Discord Developer Portal under Bot &gt; Privileged Gateway Intents.
+                </p>
+                <input type="password" value={discordToken} onChange={(e) => setDiscordToken(e.target.value)} placeholder="Bot token" className={inputClass} />
+                <Button onClick={() => run("discord", () => api.discordSetToken(discordToken.trim()))} disabled={busy === "discord" || !discordToken.trim()}>
+                  {busy === "discord" ? <Spinner /> : <Link2 size={16} />} Connect Discord
                 </Button>
               </div>
             )}

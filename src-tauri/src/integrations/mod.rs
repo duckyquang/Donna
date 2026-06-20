@@ -3,6 +3,7 @@
 //! Each connector owns its auth (OAuth tokens or API keys, stored in the OS keychain)
 //! and the actions Donna can take.
 
+pub mod discord;
 pub mod fathom;
 pub mod github;
 pub mod google;
@@ -75,6 +76,12 @@ pub fn status() -> Result<Vec<IntegrationStatus>> {
             id: "whatsapp".into(),
             name: "WhatsApp".into(),
             connected: whatsapp::is_connected()?,
+            needs_setup: false,
+        },
+        IntegrationStatus {
+            id: "discord".into(),
+            name: "Discord".into(),
+            connected: discord::is_connected().unwrap_or(false),
             needs_setup: false,
         },
     ])

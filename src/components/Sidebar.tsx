@@ -8,11 +8,13 @@ import {
   Plug,
   Settings as SettingsIcon,
   FolderOpen,
+  Zap,
 } from "lucide-react";
 
 const links = [
   { to: "/chat", label: "Chat", icon: MessageSquare },
   { to: "/projects", label: "Projects", icon: FolderOpen },
+  { to: "/productivity", label: "Productivity", icon: Zap },
   { to: "/notifications", label: "Routines", icon: Bell },
   { to: "/docs", label: "Docs", icon: FileText },
   { to: "/calendar", label: "Calendar", icon: Calendar },

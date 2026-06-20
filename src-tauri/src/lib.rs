@@ -151,6 +151,19 @@ pub fn run() {
             commands::discord_set_token,
             commands::discord_disconnect,
             commands::fathom_process_recent_meeting,
+            commands::news_fetch_latest,
+            commands::reading_list_add,
+            commands::reading_list_get,
+            commands::reading_list_summarize,
+            commands::reading_list_delete,
+            commands::focus_start,
+            commands::focus_end,
+            commands::focus_active,
+            commands::habit_create,
+            commands::habit_list,
+            commands::habit_log,
+            commands::habit_logged_today,
+            commands::project_status_report,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Donna");

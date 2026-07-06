@@ -8,6 +8,7 @@ pub mod error;
 pub mod integrations;
 pub mod knowledge;
 pub mod oauth;
+pub mod ops;
 pub mod providers;
 pub mod retrieval;
 pub mod secrets;

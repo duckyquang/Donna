@@ -19,6 +19,8 @@ async fn main() {
     let db = Arc::new(Db::open(&data_dir.join("donna.sqlite")).expect("open db"));
     let (events, _) = tokio::sync::broadcast::channel(256);
     let state = AppState { db, token, events };
+    // Run scheduled routines; due ones fire notify() → broadcast to WS clients.
+    donna_core::scheduler::run_loop(state.db.clone(), Arc::new(state.clone()));
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await.unwrap();
     println!("donna-server listening on :{port}");
     axum::serve(listener, build_app(state)).await.unwrap();

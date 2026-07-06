@@ -22,7 +22,10 @@ chrono-tz = { workspace = true }
 axum = { version = "0.7", features = ["ws"] }
 tower = "0.4"
 url = { workspace = true }
+futures-util = { workspace = true }
 
 [dev-dependencies]
 http-body-util = "0.1"
 tower = { version = "0.4", features = ["util"] }
+tokio-tungstenite = "0.23"
+futures-util = { workspace = true }

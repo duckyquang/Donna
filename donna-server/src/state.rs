@@ -14,6 +14,17 @@ pub enum ServerEvent {
     Notification { title: String, body: String },
 }
 
+/// Scheduler notifications are broadcast to every connected WS client as
+/// `{"type":"notification",...}` frames.
+impl donna_core::scheduler::Notifier for AppState {
+    fn notify(&self, title: &str, body: &str) {
+        let _ = self.events.send(ServerEvent::Notification {
+            title: title.into(),
+            body: body.into(),
+        });
+    }
+}
+
 /// Builds an `AppState` backed by a unique temp-dir SQLite DB, so parallel tests never
 /// collide on the same file.
 pub fn test_state() -> AppState {

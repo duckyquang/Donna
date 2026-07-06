@@ -35,9 +35,3 @@ pub async fn reindex_all(db: &Db, host: &str, model: &str) -> Result<usize> {
     }
     Ok(count)
 }
-
-pub fn spawn_reindex(db: Db, host: String, model: String) {
-    tauri::async_runtime::spawn(async move {
-        let _ = reindex_all(&db, &host, &model).await;
-    });
-}

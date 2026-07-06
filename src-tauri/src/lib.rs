@@ -3,18 +3,10 @@
 //! Sets up local SQLite storage, registers Tauri commands, and runs the desktop app.
 
 mod commands;
-mod db;
-mod docs;
-mod embeddings;
-mod error;
-mod integrations;
-mod knowledge;
-mod oauth;
-mod providers;
-mod retrieval;
 mod quick_chat;
 mod scheduler;
-mod secrets;
+
+pub use donna_core::{db, docs, embeddings, error, integrations, knowledge, oauth, providers, retrieval, secrets};
 
 use db::Db;
 use tauri::Manager;

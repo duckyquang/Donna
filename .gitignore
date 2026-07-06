@@ -8,10 +8,14 @@ dist/
 dist-ssr/
 build/
 *.local
+target/
 
 # Tauri / Rust
 src-tauri/target/
 src-tauri/gen/
+
+# Superpowers controller scratch
+.superpowers/
 
 # Environment & secrets (NEVER commit real secrets)
 .env

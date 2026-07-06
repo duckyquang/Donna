@@ -11,4 +11,5 @@ pub mod oauth;
 pub mod ops;
 pub mod providers;
 pub mod retrieval;
+pub mod scheduler;
 pub mod secrets;

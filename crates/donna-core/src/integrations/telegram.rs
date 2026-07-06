@@ -43,6 +43,10 @@ pub async fn send_message(text: &str) -> Result<()> {
         }))
         .send()
         .await?;
+    if !resp.status().is_success() {
+        let detail = resp.text().await.unwrap_or_default();
+        return Err(Error::Provider(format!("Telegram API error: {detail}")));
+    }
     let body: serde_json::Value = resp.json().await?;
     if body.get("ok").and_then(|o| o.as_bool()) != Some(true) {
         let desc = body

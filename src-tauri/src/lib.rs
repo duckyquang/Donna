@@ -4,7 +4,6 @@
 
 mod commands;
 mod quick_chat;
-mod scheduler;
 
 pub use donna_core::{db, docs, embeddings, error, integrations, knowledge, oauth, providers, retrieval, secrets};
 
@@ -80,7 +79,8 @@ pub fn run() {
                 });
             }
 
-            scheduler::run_loop(app.handle().clone());
+            // ponytail: one brain, one scheduler — donna-server runs routines (Task 9);
+            // the desktop app no longer starts its own scheduler loop.
 
             Ok(())
         })

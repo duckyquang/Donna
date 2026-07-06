@@ -1,10 +1,13 @@
 //! Background scheduler — evaluates routines and emits proactive notifications.
+//!
+//! Portable: takes `Arc<Db>` and a `Notifier` instead of a Tauri `AppHandle`, so both
+//! the desktop app and donna-server can drive it (desktop currently doesn't — see
+//! `// ponytail: one brain, one scheduler` in src-tauri/src/lib.rs).
 
+use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::{Datelike, Local, NaiveDate, Timelike};
-use tauri::{AppHandle, Manager};
-use tauri_plugin_notification::NotificationExt;
+use chrono::{DateTime, Datelike, Local, NaiveDate, TimeZone, Timelike, Utc};
 
 use crate::db::{Db, Routine};
 use crate::docs;
@@ -15,15 +18,19 @@ use crate::providers::{self, ChatTurn};
 use crate::retrieval;
 use crate::secrets;
 
+/// Display a system/OS notification. Implemented by the desktop app (Tauri plugin)
+/// and by donna-server (no-op or push, per Task 9).
+pub trait Notifier: Send + Sync {
+    fn notify(&self, title: &str, body: &str);
+}
+
 /// Start the 60-second scheduler loop and seed built-in routines once.
-pub fn run_loop(app: AppHandle) {
-    tauri::async_runtime::spawn(async move {
-        if let Some(db) = app.try_state::<Db>() {
-            let _ = db.seed_builtin_routines();
-        }
+pub fn run_loop(db: Arc<Db>, notifier: Arc<dyn Notifier>) {
+    tokio::spawn(async move {
+        let _ = db.seed_builtin_routines();
 
         loop {
-            if let Err(e) = tick(&app).await {
+            if let Err(e) = tick(&db, &notifier).await {
                 eprintln!("scheduler tick error: {e}");
             }
             tokio::time::sleep(Duration::from_secs(60)).await;
@@ -38,21 +45,36 @@ struct DueRoutine {
     dedupe_key: Option<String>,
 }
 
-async fn tick(app: &AppHandle) -> Result<()> {
-    let db = app.state::<Db>();
+/// Look up setting `timezone` and parse it as an IANA name (e.g. "America/New_York").
+fn configured_tz(db: &Db) -> Option<chrono_tz::Tz> {
+    db.get_setting("timezone")
+        .ok()
+        .flatten()
+        .and_then(|s| s.parse::<chrono_tz::Tz>().ok())
+}
+
+async fn tick(db: &Db, notifier: &Arc<dyn Notifier>) -> Result<()> {
     let routines = db.list_routines()?;
-    let due = collect_due_routines(&db, &routines).await?;
+    // Prefer the user's configured timezone; fall back to the system-local one
+    // when the setting is unset or fails to parse as a `chrono_tz::Tz`.
+    let due = match configured_tz(db) {
+        Some(tz) => collect_due_routines(db, &routines, Utc::now().with_timezone(&tz)).await?,
+        None => collect_due_routines(db, &routines, Local::now()).await?,
+    };
 
     for item in due {
-        if let Err(e) = execute_routine(app, &item).await {
+        if let Err(e) = execute_routine(db, notifier, &item).await {
             eprintln!("routine {} failed: {e}", item.routine.name);
         }
     }
     Ok(())
 }
 
-async fn collect_due_routines(db: &Db, routines: &[Routine]) -> Result<Vec<DueRoutine>> {
-    let now = Local::now();
+async fn collect_due_routines<Tz: TimeZone>(
+    db: &Db,
+    routines: &[Routine],
+    now: DateTime<Tz>,
+) -> Result<Vec<DueRoutine>> {
     let mut due = Vec::new();
 
     for routine in routines {
@@ -60,17 +82,8 @@ async fn collect_due_routines(db: &Db, routines: &[Routine]) -> Result<Vec<DueRo
             continue;
         }
         match routine.schedule_type.as_str() {
-            "daily" => {
-                if is_daily_due(routine, &now) && !already_ran_slot(routine, &now) {
-                    due.push(DueRoutine {
-                        routine: routine.clone(),
-                        context: None,
-                        dedupe_key: None,
-                    });
-                }
-            }
-            "weekly" => {
-                if is_weekly_due(routine, &now) && !already_ran_slot(routine, &now) {
+            "daily" | "weekly" => {
+                if is_due(routine, &now) {
                     due.push(DueRoutine {
                         routine: routine.clone(),
                         context: None,
@@ -91,7 +104,7 @@ async fn collect_due_routines(db: &Db, routines: &[Routine]) -> Result<Vec<DueRo
                         let Some(start) = parse_event_start(&ev.start) else {
                             continue;
                         };
-                        let mins_until = (start - now).num_minutes();
+                        let mins_until = (start - Local::now()).num_minutes();
                         if mins_until >= minutes.saturating_sub(1) as i64
                             && mins_until <= minutes.saturating_add(1) as i64
                         {
@@ -135,27 +148,35 @@ async fn collect_due_routines(db: &Db, routines: &[Routine]) -> Result<Vec<DueRo
     Ok(due)
 }
 
-fn is_daily_due(routine: &Routine, now: &chrono::DateTime<Local>) -> bool {
+/// Pure schedule-matching: is `routine` due at `now`, given its schedule type,
+/// hour/minute/day-of-week, and `last_run_at` (deduped per slot so a routine that
+/// already fired for this exact minute doesn't fire again on a later tick).
+fn is_due<Tz: TimeZone>(routine: &Routine, now: &DateTime<Tz>) -> bool {
+    match routine.schedule_type.as_str() {
+        "daily" => is_daily_due(routine, now) && !already_ran_slot(routine, now),
+        "weekly" => is_weekly_due(routine, now) && !already_ran_slot(routine, now),
+        _ => false,
+    }
+}
+
+fn is_daily_due<Tz: TimeZone>(routine: &Routine, now: &DateTime<Tz>) -> bool {
     routine.hour == Some(now.hour() as i32) && routine.minute == Some(now.minute() as i32)
 }
 
-fn is_weekly_due(routine: &Routine, now: &chrono::DateTime<Local>) -> bool {
+fn is_weekly_due<Tz: TimeZone>(routine: &Routine, now: &DateTime<Tz>) -> bool {
     let expected = routine.day_of_week.unwrap_or(0);
     let actual = now.weekday().num_days_from_monday() as i32;
     is_daily_due(routine, now) && expected == actual
 }
 
-fn already_ran_slot(
-    routine: &Routine,
-    now: &chrono::DateTime<Local>,
-) -> bool {
+fn already_ran_slot<Tz: TimeZone>(routine: &Routine, now: &DateTime<Tz>) -> bool {
     let Some(ref last) = routine.last_run_at else {
         return false;
     };
     let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(last) else {
         return false;
     };
-    let local = parsed.with_timezone(&Local);
+    let local = parsed.with_timezone(&now.timezone());
     if local.date_naive() != now.date_naive() {
         return false;
     }
@@ -190,8 +211,7 @@ async fn recently_ended_meetings(within_minutes: i32) -> Result<Vec<google::Cale
     google::list_events(&start.to_rfc3339(), &now.to_rfc3339()).await
 }
 
-async fn execute_routine(app: &AppHandle, item: &DueRoutine) -> Result<()> {
-    let db = app.state::<Db>();
+async fn execute_routine(db: &Db, notifier: &Arc<dyn Notifier>, item: &DueRoutine) -> Result<()> {
     let provider = db
         .get_setting("provider")?
         .unwrap_or_else(|| "ollama".into());
@@ -208,7 +228,7 @@ async fn execute_routine(app: &AppHandle, item: &DueRoutine) -> Result<()> {
     let api_key = secrets::get_api_key(&provider)?;
 
     let context = gather_context(
-        &db,
+        db,
         &item.routine,
         item.context.as_deref(),
         &provider,
@@ -250,7 +270,7 @@ async fn execute_routine(app: &AppHandle, item: &DueRoutine) -> Result<()> {
         .builtin_id
         .clone()
         .unwrap_or_else(|| "routine".into());
-    let doc_id = docs::create(&db, &doc_title, &source, &content)?;
+    let doc_id = docs::create(db, &doc_title, &source, &content)?;
 
     let notif_title = item.routine.name.clone();
     let preview: String = content.chars().take(160).collect();
@@ -261,12 +281,7 @@ async fn execute_routine(app: &AppHandle, item: &DueRoutine) -> Result<()> {
         Some(doc_id),
     )?;
 
-    let _ = app
-        .notification()
-        .builder()
-        .title(&notif_title)
-        .body(&preview)
-        .show();
+    notifier.notify(&notif_title, &preview);
 
     // Deliver via WhatsApp or Telegram if connected
     let short_body: String = content.chars().take(1500).collect();
@@ -395,5 +410,55 @@ async fn gather_context(
         Ok("(no additional context available)".into())
     } else {
         Ok(parts.join("\n\n"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn daily_routine(hour: i32, minute: i32, last_run_at: Option<String>) -> Routine {
+        Routine {
+            id: 1,
+            name: "Morning briefing".into(),
+            kind: "builtin".into(),
+            builtin_id: Some("morning_briefing".into()),
+            schedule_type: "daily".into(),
+            hour: Some(hour),
+            minute: Some(minute),
+            day_of_week: None,
+            minutes_before: None,
+            prompt: None,
+            enabled: true,
+            last_run_at,
+        }
+    }
+
+    #[test]
+    fn daily_routine_due_at_exact_time() {
+        let routine = daily_routine(8, 0, None);
+
+        // 08:00:30 → within the due minute, no prior run → due.
+        let now = Utc.with_ymd_and_hms(2026, 7, 7, 8, 0, 30).unwrap();
+        assert!(is_due(&routine, &now));
+    }
+
+    #[test]
+    fn daily_routine_not_due_before_scheduled_time() {
+        let routine = daily_routine(8, 0, None);
+
+        // 07:59 → not yet due.
+        let now = Utc.with_ymd_and_hms(2026, 7, 7, 7, 59, 0).unwrap();
+        assert!(!is_due(&routine, &now));
+    }
+
+    #[test]
+    fn daily_routine_not_due_again_after_run_in_same_slot() {
+        // Already ran at 08:00 today (same slot, dedupe via last_run_at).
+        let routine = daily_routine(8, 0, Some("2026-07-07T08:00:15+00:00".into()));
+
+        // Later tick still inside the 08:00 minute → already handled, not due again.
+        let now = Utc.with_ymd_and_hms(2026, 7, 7, 8, 0, 45).unwrap();
+        assert!(!is_due(&routine, &now));
     }
 }

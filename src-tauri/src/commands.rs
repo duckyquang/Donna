@@ -548,7 +548,7 @@ pub async fn kg_save_node(
         from_id.as_deref(),
     )?;
     let config = load_config(&db)?;
-    if config.provider == "ollama" && !config.embed_model.is_empty() {
+    if embeddings::backend_available(&db) && !config.embed_model.is_empty() {
         let _ = embeddings::index_node(
             &db,
             &config.ollama_host,
@@ -675,7 +675,7 @@ pub async fn kg_extract(db: State<'_, Db>, conversation_id: i64) -> Result<usize
             }
 
             knowledge::save_node(&folder, label, note, node_type, None, None)?;
-            if config.provider == "ollama" && !config.embed_model.is_empty() {
+            if embeddings::backend_available(&db) && !config.embed_model.is_empty() {
                 if let Ok(graph) = knowledge::graph() {
                     if let Some(node) = graph.nodes.iter().find(|n| {
                         n.folder == folder && n.label.eq_ignore_ascii_case(label)
@@ -743,7 +743,7 @@ fn extract_json(text: &str) -> Option<serde_json::Value> {
 #[tauri::command]
 pub async fn kg_reindex_embeddings(db: State<'_, Db>) -> Result<usize> {
     let config = load_config(&db)?;
-    if config.provider != "ollama" || config.embed_model.is_empty() {
+    if !embeddings::backend_available(&db) || config.embed_model.is_empty() {
         return Ok(0);
     }
     embeddings::reindex_all(&db, &config.ollama_host, &config.embed_model).await

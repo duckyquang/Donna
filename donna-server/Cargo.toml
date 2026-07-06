@@ -21,6 +21,7 @@ chrono = { workspace = true }
 chrono-tz = { workspace = true }
 axum = { version = "0.7", features = ["ws"] }
 tower = "0.4"
+url = { workspace = true }
 
 [dev-dependencies]
 http-body-util = "0.1"

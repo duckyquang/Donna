@@ -49,7 +49,7 @@ async fn run(socket: WebSocket, st: AppState) {
     // Forward broadcast notifications ({"type":"notification",...}) to this client.
     let mut events = st.events.subscribe();
     let notif_tx = out_tx.clone();
-    tokio::spawn(async move {
+    let forwarder = tokio::spawn(async move {
         use tokio::sync::broadcast::error::RecvError;
         loop {
             match events.recv().await {
@@ -90,9 +90,15 @@ async fn run(socket: WebSocket, st: AppState) {
         tokio::spawn(async move { dispatch(db, frame, tx).await });
     }
 
-    // Client hung up: drop out_tx so the sender loop ends, then reap it.
+    // Client hung up. Dropping out_tx alone isn't enough: `forwarder` still holds
+    // notif_tx and is parked on events.recv().await, so out_rx would never see
+    // None and `sender` would hang forever waiting for a close that never comes.
+    // ponytail: abort forwarder + sender directly instead of select!'ing the read
+    // loop against them — same cancellation, smaller diff against the existing
+    // spawned-task structure.
     drop(out_tx);
-    let _ = sender.await;
+    forwarder.abort();
+    sender.abort();
 }
 
 /// Run one chat command, forwarding each `ChatEvent` as a `chat_event` frame.

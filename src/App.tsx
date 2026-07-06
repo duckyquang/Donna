@@ -4,6 +4,8 @@ import { Sidebar } from "./components/Sidebar";
 import { useConfig } from "./lib/useConfig";
 import { isDesktopApp } from "./lib/tauri";
 import Chat from "./routes/Chat";
+import Dashboard from "./routes/Dashboard";
+import QuickChat from "./routes/QuickChat";
 import Projects from "./routes/Projects";
 import Productivity from "./routes/Productivity";
 import Notifications from "./routes/Notifications";
@@ -20,6 +22,15 @@ export default function App() {
 
   if (!isDesktopApp()) {
     return <DesktopRequired />;
+  }
+
+  // Quick-chat window — standalone overlay, no Sidebar or onboarding checks
+  if (window.location.pathname === "/quick-chat") {
+    return (
+      <Routes>
+        <Route path="/quick-chat" element={<QuickChat />} />
+      </Routes>
+    );
   }
 
   if (loading) {
@@ -45,7 +56,8 @@ export default function App() {
       <Sidebar />
       <main className="flex-1 overflow-hidden">
         <Routes>
-          <Route path="/" element={<Navigate to="/chat" replace />} />
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/chat" element={<Chat />} />
           <Route path="/projects" element={<Projects />} />
           <Route path="/productivity" element={<Productivity />} />

@@ -10,10 +10,10 @@ export type KgCircleNodeData = {
   isFolder?: boolean;
 };
 
-export const CARD_W = 168;
-export const CARD_H = 68;
-export const PILL_W = 116;
-export const PILL_H = 30;
+export const CARD_W = 80;
+export const CARD_H = 46;
+export const PILL_W = 100;
+export const PILL_H = 26;
 
 function KgCircleNodeComponent({ data, selected }: NodeProps) {
   const d = data as KgCircleNodeData;
@@ -21,55 +21,35 @@ function KgCircleNodeComponent({ data, selected }: NodeProps) {
   if (d.isFolder) {
     return (
       <div
-        className={`kg-folder-pill${selected ? " kg-folder-pill--selected" : ""}`}
+        className={`kg-dot-pill${selected ? " kg-dot-pill--selected" : ""}`}
         style={{
-          borderColor: selected ? d.color : `${d.color}80`,
-          boxShadow: selected
-            ? `0 0 14px ${d.color}55, 0 0 0 1px ${d.color}40`
-            : `0 0 6px ${d.color}22`,
+          borderColor: selected ? d.color : `${d.color}55`,
+          boxShadow: selected ? `0 0 10px ${d.color}40` : "none",
         }}
         title={d.label}
       >
-        <span
-          className="kg-folder-pill__dot"
-          style={{ background: d.color }}
-        />
-        <span className="kg-folder-pill__label">{d.label}</span>
+        <span className="kg-dot-pill__dot" style={{ background: d.color }} />
+        <span className="kg-dot-pill__label">{d.label}</span>
       </div>
     );
   }
 
-  const notePreview = d.note
-    ? d.note.replace(/[*#_`>]/g, "").trim().slice(0, 110)
-    : "";
-
   return (
     <div
-      className={`kg-card-node${selected ? " kg-card-node--selected" : ""}`}
-      style={{
-        borderColor: selected ? `${d.color}cc` : `${d.color}30`,
-        boxShadow: selected
-          ? `0 0 0 1px ${d.color}60, 0 0 20px ${d.color}30, 0 4px 16px rgba(0,0,0,0.5)`
-          : `0 2px 10px rgba(0,0,0,0.35)`,
-      }}
+      className={`kg-dot-node${selected ? " kg-dot-node--selected" : ""}`}
       title={d.label}
     >
-      <div className="kg-card-stripe" style={{ background: d.color }} />
-      <div className="kg-card-body">
-        <div className="kg-card-header">
-          <span className="kg-card-label">{d.label}</span>
-          {d.nodeType && d.nodeType !== "info" && (
-            <span className="kg-card-type" style={{ color: d.color }}>
-              {d.nodeType}
-            </span>
-          )}
-        </div>
-        {notePreview ? (
-          <p className="kg-card-note">{notePreview}</p>
-        ) : (
-          <p className="kg-card-note kg-card-note--empty">No description yet</p>
-        )}
-      </div>
+      <div
+        className="kg-dot-node__circle"
+        style={{
+          background: d.color,
+          boxShadow: selected
+            ? `0 0 0 3px ${d.color}40, 0 0 16px ${d.color}70`
+            : `0 0 6px ${d.color}55`,
+          transform: selected ? "scale(1.45)" : "scale(1)",
+        }}
+      />
+      <span className="kg-dot-node__label">{d.label}</span>
     </div>
   );
 }

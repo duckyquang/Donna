@@ -12,6 +12,7 @@ mod knowledge;
 mod oauth;
 mod providers;
 mod retrieval;
+mod quick_chat;
 mod scheduler;
 mod secrets;
 
@@ -22,6 +23,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             // Create the local knowledge-base folder tree on first run.
             let _ = knowledge::ensure_root();
@@ -57,6 +59,28 @@ pub fn run() {
             };
 
             app.manage(db);
+
+            // Quick-chat state
+            app.manage(crate::quick_chat::QuickChatState::default());
+
+            // Register Cmd+D global shortcut for the quick-chat overlay
+            {
+                use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+                let handle = app.handle().clone();
+                app.global_shortcut().on_shortcut("CmdOrCtrl+D", move |_app, _shortcut, event| {
+                    if event.state() == ShortcutState::Pressed {
+                        let handle = handle.clone();
+                        tauri::async_runtime::spawn_blocking(move || {
+                            // Capture screen context in background thread
+                            let ctx = crate::quick_chat::capture_context();
+                            if let Some(state) = handle.try_state::<crate::quick_chat::QuickChatState>() {
+                                *state.ctx.lock().unwrap() = ctx;
+                            }
+                            let _ = crate::quick_chat::open_quick_chat_window(&handle);
+                        });
+                    }
+                })?;
+            }
 
             if let Some((host, model)) = ollama_warmup {
                 tauri::async_runtime::spawn(async move {
@@ -164,6 +188,10 @@ pub fn run() {
             commands::habit_log,
             commands::habit_logged_today,
             commands::project_status_report,
+            commands::quick_chat_context,
+            commands::quick_chat_send,
+            commands::news_list_items,
+            commands::news_article_summary,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Donna");

@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "notification:default",
-    "dialog:default"
+    "dialog:default",
+    "global-shortcut:allow-register"
   ]
 }

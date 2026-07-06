@@ -235,6 +235,19 @@ export interface Habit {
   created_at: string;
 }
 
+export interface NewsItemStructured {
+  id: number;
+  title: string;
+  url: string | null;
+  score: number;
+  by: string;
+}
+
+export interface QuickChatCtx {
+  screenshot_b64: string | null;
+  app_name: string;
+}
+
 function toEvent(e: RawCalendarEvent): CalendarEvent {
   return {
     id: e.id,
@@ -840,4 +853,20 @@ export const api = {
 
   // --- Project extras ---
   projectStatusReport: (projectId: number) => invoke<string>("project_status_report", { project_id: projectId }),
+
+  // --- News (structured) ---
+  newsListItems: (limit = 10) => invoke<NewsItemStructured[]>("news_list_items", { limit }),
+  newsArticleSummary: (url: string) => invoke<string>("news_article_summary", { url }),
+
+  // --- Quick Chat (Cmd+D overlay) ---
+  quickChatContext: () => invoke<QuickChatCtx>("quick_chat_context"),
+  async quickChatSend(
+    message: string,
+    appName: string,
+    onEvent: (event: ChatEvent) => void
+  ): Promise<void> {
+    const channel = new Channel<ChatEvent>();
+    channel.onmessage = onEvent;
+    await invoke("quick_chat_send", { message, appName, onEvent: channel });
+  },
 };

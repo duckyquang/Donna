@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, Link2, Plug, RefreshCw, Send, Unplug } from "lucide-react";
+import { Check, HelpCircle, Link2, Plug, RefreshCw, Send, Unplug, X } from "lucide-react";
 import { PageShell } from "../components/PageShell";
 import { Button, Spinner } from "../components/ui";
 import {
@@ -18,6 +18,7 @@ export default function Integrations() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
 
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
@@ -132,10 +133,21 @@ export default function Integrations() {
     "w-full rounded-lg border border-white/10 bg-donna-bg px-3 py-2 text-sm text-white outline-none focus:border-donna-accent";
 
   return (
+    <>
+    {showHelp && <SetupGuideModal onClose={() => setShowHelp(false)} />}
     <PageShell
       title="Integrations"
       subtitle="Connect your tools so Donna can work across them. Credentials are stored in your OS keychain."
     >
+      <div className="mb-6 flex justify-end">
+        <button
+          onClick={() => setShowHelp(true)}
+          className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-gray-400 hover:bg-white/5 hover:text-gray-200 transition-colors"
+        >
+          <HelpCircle size={13} />
+          Setup guides
+        </button>
+      </div>
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-gray-400">
           <Spinner /> Loading…
@@ -409,6 +421,181 @@ export default function Integrations() {
         </div>
       )}
     </PageShell>
+    </>
+  );
+}
+
+// ─── Setup Guide Modal ───────────────────────────────────────────────────────
+
+const GUIDES: { id: string; name: string; steps: { title: string; body: string }[] }[] = [
+  {
+    id: "google",
+    name: "Google Workspace",
+    steps: [
+      { title: "Open Google Cloud Console", body: "Go to console.cloud.google.com → select or create a project." },
+      { title: "Enable APIs", body: "APIs & Services → Library → enable Gmail API, Google Calendar API, and Google Drive API." },
+      { title: "Create OAuth credentials", body: "APIs & Services → Credentials → Create Credentials → OAuth client ID → choose Desktop app → copy Client ID and Client Secret." },
+      { title: "Configure consent screen", body: "OAuth consent screen → External (or Internal) → add your Gmail as a test user → add scopes: gmail.readonly, gmail.compose, calendar, drive.readonly." },
+      { title: "Paste into Donna", body: "Paste Client ID and Client Secret in the Google card → Save client → Connect Google." },
+    ],
+  },
+  {
+    id: "slack",
+    name: "Slack",
+    steps: [
+      { title: "Create a Slack app", body: "Go to api.slack.com/apps → Create New App → From scratch → name it (e.g. Donna)." },
+      { title: "Add bot scopes", body: "OAuth & Permissions → Bot Token Scopes → add: channels:read, chat:write, groups:read, im:read, users:read." },
+      { title: "Install to workspace", body: "Install App → Install to Workspace → allow → copy the Bot User OAuth Token (starts with xoxb-)." },
+      { title: "Paste into Donna", body: "Paste the xoxb- token into the Slack card and click Connect." },
+    ],
+  },
+  {
+    id: "fathom",
+    name: "Fathom",
+    steps: [
+      { title: "Open Fathom settings", body: "Log into fathom.video → click your avatar → Settings → API → Create API Key." },
+      { title: "Copy the key", body: "Name it 'Donna' and copy the generated key." },
+      { title: "Paste into Donna", body: "Paste the key into the Fathom card and click Connect." },
+    ],
+  },
+  {
+    id: "discord",
+    name: "Discord",
+    steps: [
+      { title: "Create a Discord application", body: "Go to discord.com/developers/applications → New Application → name it (e.g. Donna)." },
+      { title: "Create a bot", body: "Select your app → Bot → Add Bot → copy the Token." },
+      { title: "Enable intents", body: "Bot → Privileged Gateway Intents → enable MESSAGE CONTENT INTENT (and Server Members if needed)." },
+      { title: "Invite bot to server", body: "OAuth2 → URL Generator → check bot + Send Messages → open the generated URL and add to your server." },
+      { title: "Paste into Donna", body: "Paste the bot Token into the Discord card and click Connect." },
+    ],
+  },
+  {
+    id: "github",
+    name: "GitHub",
+    steps: [
+      { title: "Open GitHub Settings", body: "github.com → avatar → Settings → Developer settings → Personal access tokens → Tokens (classic)." },
+      { title: "Generate token", body: "Generate new token → give it a name → check scopes: repo, read:user, read:org, issues." },
+      { title: "Copy and paste", body: "Copy the token immediately (it won't show again) → paste into the GitHub card → Connect." },
+    ],
+  },
+  {
+    id: "linear",
+    name: "Linear",
+    steps: [
+      { title: "Open Linear settings", body: "linear.app → your workspace → Settings → Security & access → Personal API keys → New API key." },
+      { title: "Name and create", body: "Name it 'Donna' → Create key → copy the shown value (you won't see it again)." },
+      { title: "Paste into Donna", body: "Paste into the Linear card and click Connect." },
+    ],
+  },
+  {
+    id: "notion",
+    name: "Notion",
+    steps: [
+      { title: "Create an integration", body: "Go to notion.so/my-integrations → New integration → name it 'Donna' → select your workspace." },
+      { title: "Set capabilities", body: "Capabilities → enable Read content, Read user info without email." },
+      { title: "Share pages", body: "In Notion, open each page/database you want Donna to read → … → Connections → Donna." },
+      { title: "Copy and paste", body: "Back in the integration settings, copy the Internal Integration Token → paste into the Notion card → Connect." },
+    ],
+  },
+  {
+    id: "telegram",
+    name: "Telegram",
+    steps: [
+      { title: "Create a bot", body: "Open Telegram → search @BotFather → /newbot → follow prompts → copy the bot token." },
+      { title: "Get your chat ID", body: "Start a chat with your new bot, then visit: https://api.telegram.org/bot<TOKEN>/getUpdates — look for 'id' in 'chat'." },
+      { title: "Paste into Donna", body: "Enter the bot token and your chat ID in the Telegram card → Connect." },
+    ],
+  },
+  {
+    id: "whatsapp",
+    name: "WhatsApp",
+    steps: [
+      { title: "Set up Meta Business", body: "Go to developers.facebook.com → My Apps → Create App → Business → add WhatsApp product." },
+      { title: "Get a test number", body: "WhatsApp → API Setup → use the sandbox phone number or add a production number." },
+      { title: "Generate access token", body: "System Users → generate a permanent token with whatsapp_business_messaging permission." },
+      { title: "Get Phone Number ID", body: "WhatsApp → API Setup → copy the Phone number ID (not the phone number itself)." },
+      { title: "Paste into Donna", body: "Paste the access token and phone number ID into the WhatsApp card → Connect." },
+    ],
+  },
+  {
+    id: "server",
+    name: "donna-server (24/7)",
+    steps: [
+      { title: "Deploy the server binary", body: "The donna-server/ folder is a standalone Rust binary. See donna-server/README.md for guides for Oracle Cloud Free Tier, Fly.io, and Raspberry Pi." },
+      { title: "Set environment variables", body: "Copy donna-server/.env.example to .env and fill in DONNA_* vars: WhatsApp/Telegram credentials, Google calendar OAuth token, location coords, and briefing hours." },
+      { title: "Run with Docker", body: "cd donna-server && docker build -t donna-server . && docker run --env-file .env donna-server" },
+      { title: "What it does", body: "Sends you a morning briefing, daily tech news digest, weekly review, and pre-meeting background checks — all via WhatsApp or Telegram — even while your Mac is off." },
+    ],
+  },
+];
+
+function SetupGuideModal({ onClose }: { onClose: () => void }) {
+  const [activeId, setActiveId] = useState(GUIDES[0].id);
+  const guide = GUIDES.find((g) => g.id === activeId) ?? GUIDES[0];
+
+  return (
+    <>
+      {/* Backdrop */}
+      <button
+        type="button"
+        aria-label="Close guide"
+        className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]"
+        onClick={onClose}
+      />
+      {/* Panel */}
+      <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-2xl flex-col border-l border-white/10 bg-donna-panel shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
+          <div className="flex items-center gap-2.5">
+            <HelpCircle size={16} className="text-donna-accent-light" />
+            <h2 className="text-sm font-semibold text-white">Setup Guides</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1 text-gray-400 hover:bg-white/8 hover:text-white transition-colors"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="flex flex-1 overflow-hidden">
+          {/* Sidebar */}
+          <div className="w-44 flex-shrink-0 overflow-y-auto border-r border-white/8 py-3">
+            {GUIDES.map((g) => (
+              <button
+                key={g.id}
+                onClick={() => setActiveId(g.id)}
+                className={`w-full px-4 py-2 text-left text-xs transition-colors ${
+                  g.id === activeId
+                    ? "bg-donna-accent/12 text-donna-accent-light font-medium"
+                    : "text-gray-400 hover:bg-white/5 hover:text-gray-200"
+                }`}
+              >
+                {g.name}
+              </button>
+            ))}
+          </div>
+
+          {/* Steps */}
+          <div className="flex-1 overflow-y-auto px-6 py-5">
+            <h3 className="mb-5 text-base font-semibold text-white">{guide.name}</h3>
+            <ol className="space-y-5">
+              {guide.steps.map((step, i) => (
+                <li key={i} className="flex gap-4">
+                  <div className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-donna-accent/20 text-[10px] font-bold text-donna-accent-light">
+                    {i + 1}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-100">{step.title}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-gray-400">{step.body}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
 

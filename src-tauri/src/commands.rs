@@ -1378,3 +1378,152 @@ fn walkdir_shallow(root: &std::path::Path) -> Vec<std::path::PathBuf> {
     }
     files
 }
+
+// --- Quick Chat ---------------------------------------------------------------
+
+#[tauri::command]
+pub fn quick_chat_context(
+    state: tauri::State<'_, crate::quick_chat::QuickChatState>,
+) -> crate::quick_chat::QuickChatContext {
+    state.ctx.lock().unwrap().clone()
+}
+
+#[tauri::command]
+pub async fn quick_chat_send(
+    db: State<'_, Db>,
+    message: String,
+    app_name: String,
+    on_event: Channel<ChatEvent>,
+) -> Result<()> {
+    let provider = db.get_setting("provider")?.unwrap_or_else(|| "ollama".into());
+    let model = db.get_setting("model")?.unwrap_or_default();
+    let ollama_host = db
+        .get_setting("ollama_host")?
+        .unwrap_or_else(|| providers::DEFAULT_OLLAMA_HOST.into());
+    let api_key = secrets::get_api_key(&provider)?;
+
+    let system = format!(
+        "You are Donna, a sharp and concise AI assistant. \
+        The user pressed Cmd+D while working in \"{app_name}\" and asked you a quick question. \
+        Answer briefly and practically. No pleasantries needed."
+    );
+
+    let turns = vec![
+        ChatTurn { role: "system".into(), content: system },
+        ChatTurn { role: "user".into(), content: message },
+    ];
+
+    let mut answer = String::new();
+    let result = providers::stream_chat(
+        &provider,
+        &model,
+        api_key,
+        &ollama_host,
+        &turns,
+        |token| {
+            answer.push_str(token);
+            let _ = on_event.send(ChatEvent::Token { content: token.to_string() });
+        },
+    )
+    .await;
+
+    match result {
+        Ok(()) => {
+            let _ = on_event.send(ChatEvent::Done { message_id: 0 });
+            Ok(())
+        }
+        Err(e) => {
+            let _ = on_event.send(ChatEvent::Error { message: e.to_string() });
+            Err(e)
+        }
+    }
+}
+
+// --- News items (structured) --------------------------------------------------
+
+#[tauri::command]
+pub async fn news_list_items(
+    limit: Option<usize>,
+) -> Result<Vec<crate::integrations::news::NewsItem>> {
+    crate::integrations::news::top_stories(limit.unwrap_or(10)).await
+}
+
+#[tauri::command]
+pub async fn news_article_summary(db: State<'_, Db>, url: String) -> Result<String> {
+    let provider = db.get_setting("provider")?.unwrap_or_else(|| "ollama".into());
+    let model = db.get_setting("model")?.unwrap_or_default();
+    let ollama_host = db
+        .get_setting("ollama_host")?
+        .unwrap_or_else(|| providers::DEFAULT_OLLAMA_HOST.into());
+    let api_key = secrets::get_api_key(&provider)?;
+
+    let html = reqwest::get(&url)
+        .await
+        .map_err(|e| Error::Provider(e.to_string()))?
+        .text()
+        .await
+        .map_err(|e| Error::Provider(e.to_string()))?;
+
+    let text = strip_html_text(&html);
+    let excerpt: String = text.chars().take(4500).collect();
+
+    let turns = vec![
+        ChatTurn {
+            role: "system".into(),
+            content: "You are a concise news summarizer. Write a 3-4 sentence plain summary \
+                of the key points from the article. Be factual and skip metadata/ads/nav."
+                .into(),
+        },
+        ChatTurn {
+            role: "user".into(),
+            content: format!("Source: {url}\n\n{excerpt}"),
+        },
+    ];
+
+    providers::complete(&provider, &model, api_key, &ollama_host, &turns).await
+}
+
+fn strip_html_text(html: &str) -> String {
+    let mut out = String::new();
+    let mut in_tag = false;
+    let mut skip_block = false;
+    let bytes = html.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+
+    while i < len {
+        // Detect <script> and <style> block starts
+        if !in_tag && i + 7 <= len {
+            let chunk = html[i..].to_lowercase();
+            if chunk.starts_with("<script") || chunk.starts_with("<style") {
+                skip_block = true;
+                in_tag = true;
+            }
+            if skip_block && (chunk.starts_with("</script>") || chunk.starts_with("</style>")) {
+                skip_block = false;
+                // skip to '>'
+                while i < len && bytes[i] != b'>' { i += 1; }
+                i += 1;
+                continue;
+            }
+        }
+
+        let c = bytes[i] as char;
+        match c {
+            '<' => { in_tag = true; }
+            '>' => { in_tag = false; if !skip_block { out.push(' '); } }
+            _ if !in_tag && !skip_block => out.push(c),
+            _ => {}
+        }
+        i += 1;
+    }
+
+    out.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&nbsp;", " ")
+        .replace("&quot;", "\"")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}

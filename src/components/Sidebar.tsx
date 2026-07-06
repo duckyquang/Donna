@@ -9,9 +9,11 @@ import {
   Settings as SettingsIcon,
   FolderOpen,
   Zap,
+  LayoutDashboard,
 } from "lucide-react";
 
 const links = [
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/chat", label: "Chat", icon: MessageSquare },
   { to: "/projects", label: "Projects", icon: FolderOpen },
   { to: "/productivity", label: "Productivity", icon: Zap },

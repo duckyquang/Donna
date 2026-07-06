@@ -48,9 +48,18 @@ type Frame = { type: string; id?: string; event?: unknown; title?: string; body?
 let socket: WebSocket | null = null;
 const chatHandlers = new Map<string, (ev: unknown) => void>();
 const eventHandlers = new Set<(f: Frame) => void>();
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+// ponytail: fixed 5s retry cadence while subscribers exist — no backoff ceiling needed,
+// this already caps at "one attempt per 5s forever" which is cheap enough to run indefinitely.
+const RECONNECT_MS = 5000;
 
 function ensureSocket(): WebSocket {
   if (socket && socket.readyState <= WebSocket.OPEN) return socket;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   const { url, token } = serverConfig();
   socket = new WebSocket(`${url.replace(/^http/, "ws")}/ws?token=${encodeURIComponent(token)}`);
   socket.onmessage = (m) => {
@@ -60,6 +69,15 @@ function ensureSocket(): WebSocket {
   };
   socket.onclose = () => {
     socket = null;
+    chatHandlers.clear();
+    // Only keep trying while someone's actually listening for push notifications
+    // (routines/scheduler). Chat re-opens the socket lazily on send anyway.
+    if (eventHandlers.size > 0 && !reconnectTimer) {
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        ensureSocket();
+      }, RECONNECT_MS);
+    }
   };
   return socket;
 }

@@ -14,7 +14,6 @@ const NATIVE_COMMANDS = new Set([
   "project_list_files",
   "project_read_file",
   "project_write_file",
-  "project_status_report",
 ]);
 
 function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {

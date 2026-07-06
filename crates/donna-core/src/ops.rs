@@ -744,6 +744,15 @@ pub fn google_disconnect() -> Result<()> {
     google::disconnect()
 }
 
+/// Push Google secrets exported from the desktop keychain into this store, so server-side
+/// Google API calls (and token refresh) work. `client`/`token` are the raw JSON strings
+/// stored under `google_client` / `oauth:google` on the desktop — written back verbatim.
+pub fn import_google_secrets(client: String, token: String) -> Result<()> {
+    secrets::set_secret("google_client", &client)?;
+    secrets::set_secret("oauth:google", &token)?;
+    Ok(())
+}
+
 pub async fn calendar_list_events(
     time_min: String,
     time_max: String,
@@ -1000,6 +1009,31 @@ pub async fn project_create(
 
 pub async fn project_delete(db: &Db, id: i64) -> Result<()> {
     db.delete_project(id)
+}
+
+/// Server half of the status report: given file contents the desktop collected locally,
+/// generate a report with the configured provider and save it as a doc + notification.
+pub async fn project_status_report(
+    db: &Db,
+    name: String,
+    template: String,
+    file_contents: String,
+) -> Result<String> {
+    let config = load_config(db)?;
+    let api_key = secrets::get_api_key(&config.provider)?;
+    let turns = vec![
+        ChatTurn { role: "system".into(), content: "Generate a concise project status report with: current status, what's done, what's in progress, blockers, and next steps. Use Markdown.".into() },
+        ChatTurn { role: "user".into(), content: format!("Project: {name}\nTemplate: {template}\n\nFiles:\n{file_contents}") },
+    ];
+    let report = providers::complete(&config.provider, &config.model, api_key, &config.ollama_host, &turns).await?;
+    let doc_id = crate::docs::create(db, &format!("Status Report: {name}"), "project_status", &report)?;
+    db.insert_notification(
+        &format!("Status report: {name}"),
+        "Project status report is ready in Docs.",
+        Some("open_doc"),
+        Some(doc_id),
+    )?;
+    Ok(report)
 }
 
 // --- Discord -----------------------------------------------------------------

@@ -231,7 +231,7 @@ export default function Integrations() {
                   <Button variant="ghost" onClick={() => run("google", () => api.googleSetClient(clientId.trim(), clientSecret.trim()))} disabled={busy === "google" || !clientId.trim() || !clientSecret.trim()}>
                     <Check size={16} /> Save client
                   </Button>
-                  <Button onClick={() => run("google", api.googleConnect)} disabled={busy === "google" || status("google")?.needsSetup}>
+                  <Button onClick={() => run("google", api.googleConnectAndSync)} disabled={busy === "google" || status("google")?.needsSetup}>
                     {busy === "google" ? <Spinner /> : <Link2 size={16} />} Connect Google
                   </Button>
                 </div>

@@ -6,8 +6,9 @@
 //!
 //! Excluded (no arm): the streaming pair `send_chat`/`quick_chat_send` (WS-only, Task 9),
 //! the native-only commands with no ops fn (`quick_chat_context`, `project_open_in_editor`,
-//! `project_list_files`, `project_read_file`, `project_write_file`, `project_status_report`),
-//! and `google_connect` (desktop-native OAuth, no server arm).
+//! `project_list_files`, `project_read_file`, `project_write_file`), and `google_connect`
+//! (desktop-native OAuth). `project_status_report` is a hybrid: the desktop walks the local
+//! project folder natively, then this arm generates + saves the report from those contents.
 
 use axum::{extract::{Path, State}, http::StatusCode, Json};
 use serde_json::{json, Value};
@@ -93,6 +94,7 @@ async fn dispatch(st: &AppState, cmd: &str, a: &Value) -> Result<Value, String> 
         "integrations_status" => ok!(ops::integrations_status()),
         "google_set_client" => ok!(ops::google_set_client(arg(&a, "clientId")?, arg(&a, "clientSecret")?)),
         "google_disconnect" => ok!(ops::google_disconnect()),
+        "import_google_secrets" => ok!(ops::import_google_secrets(arg(&a, "client")?, arg(&a, "token")?)),
 
         // --- Calendar ---
         "calendar_list_events" => ok!(ops::calendar_list_events(arg(&a, "timeMin")?, arg(&a, "timeMax")?).await),
@@ -162,6 +164,7 @@ async fn dispatch(st: &AppState, cmd: &str, a: &Value) -> Result<Value, String> 
         "project_list" => ok!(ops::project_list(db).await),
         "project_create" => ok!(ops::project_create(db, arg(&a, "name")?, arg(&a, "template")?, arg(&a, "path")?).await),
         "project_delete" => ok!(ops::project_delete(db, arg(&a, "id")?).await),
+        "project_status_report" => ok!(ops::project_status_report(db, arg(&a, "name")?, arg(&a, "template")?, arg(&a, "fileContents")?).await),
 
         // --- Discord ---
         "discord_set_token" => ok!(ops::discord_set_token(arg(&a, "token")?).await),

@@ -41,6 +41,10 @@ export default function Notifications() {
 
   useEffect(() => {
     load();
+    // Refresh when the server broadcasts a notification (e.g. a routine fired).
+    const onNotify = () => load();
+    window.addEventListener("donna:notification", onNotify);
+    return () => window.removeEventListener("donna:notification", onNotify);
   }, []);
 
   const toggle = async (routine: Routine) => {

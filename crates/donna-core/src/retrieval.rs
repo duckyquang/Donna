@@ -6,7 +6,6 @@ use crate::db::Db;
 use crate::embeddings;
 use crate::error::Result;
 use crate::knowledge::{self, KbNode};
-use crate::providers;
 
 const TOP_K: usize = 5;
 
@@ -38,9 +37,10 @@ pub async fn search_for_prompt(
         }
     }
 
-    if config.provider == "ollama" && !config.embed_model.is_empty() {
+    let embeddings_available = embeddings::backend_available(db) && !config.embed_model.is_empty();
+    if embeddings_available {
         if let Ok(query_vec) =
-            providers::embed_ollama(config.ollama_host, config.embed_model, query).await
+            embeddings::embed(db, config.ollama_host, config.embed_model, query).await
         {
             if !query_vec.is_empty() {
                 for (key, vector) in db.list_embeddings()? {
@@ -76,7 +76,7 @@ pub async fn search_for_prompt(
             .then_with(|| a.0.label.cmp(&b.0.label))
     });
 
-    let method = if config.provider == "ollama" && !config.embed_model.is_empty() {
+    let method = if embeddings_available {
         "hybrid keyword + embedding match"
     } else {
         "keyword match"

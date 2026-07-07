@@ -265,6 +265,196 @@ async fn list_openai_models(key: &str) -> Result<Vec<String>> {
     Ok(ids)
 }
 
+// --- OpenAI agent step (tool-calling) ----------------------------------------
+//
+// Parallel entry point for the Phase 2 agent loop. Kept separate from
+// `stream_chat`/`consume_sse`/`ChatTurn` because those serve plain chat and their
+// `extract` contract is text-only — bending it to also carry tool-call deltas and
+// usage would leak agent concerns into every existing provider path.
+
+/// A message in the OpenAI agent loop. Unlike `ChatTurn`, this can carry assistant
+/// tool-call requests or tool-result turns. Optional fields are omitted (not
+/// serialized as `null`) so assistant turns without content, and non-tool turns,
+/// match the exact OpenAI wire shape.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTurn {
+    pub role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ToolCallOut>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+}
+
+/// A tool call as it appears on an outgoing assistant `AgentTurn`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolCallOut {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub function: FunctionCall,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FunctionCall {
+    pub name: String,
+    pub arguments: String,
+}
+
+/// A tool call assembled from streamed deltas, ready for the agent loop to execute.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolCall {
+    pub id: String,
+    pub name: String,
+    pub arguments: String,
+}
+
+/// One step of the agent loop: any text OpenAI produced, any tool calls it wants
+/// to make, and the token usage for this step.
+#[derive(Debug, Clone, Default)]
+pub struct AgentStep {
+    pub content: String,
+    pub tool_calls: Vec<ToolCall>,
+    pub total_tokens: u64,
+}
+
+/// In-progress tool call, keyed by its `index` in the `tool_calls` delta array.
+/// `id`/`name` arrive on the first fragment for that index; `arguments` accumulates
+/// as plain string concatenation across fragments (it's a JSON string being typed
+/// out incrementally, so fragments can split mid-token or mid-escape).
+#[derive(Debug, Clone, Default)]
+pub struct PartialToolCall {
+    pub id: String,
+    pub name: String,
+    pub arguments: String,
+}
+
+/// Fold one `choices[0].delta.tool_calls[]` element into the accumulator.
+fn accumulate_tool_delta(acc: &mut Vec<PartialToolCall>, delta: &serde_json::Value) {
+    let Some(index) = delta.get("index").and_then(|i| i.as_u64()) else {
+        return;
+    };
+    let index = index as usize;
+    if acc.len() <= index {
+        acc.resize(index + 1, PartialToolCall::default());
+    }
+    let entry = &mut acc[index];
+    if let Some(id) = delta.get("id").and_then(|v| v.as_str()) {
+        entry.id.push_str(id);
+    }
+    if let Some(function) = delta.get("function") {
+        if let Some(name) = function.get("name").and_then(|v| v.as_str()) {
+            entry.name.push_str(name);
+        }
+        if let Some(args) = function.get("arguments").and_then(|v| v.as_str()) {
+            entry.arguments.push_str(args);
+        }
+    }
+}
+
+/// Turn the accumulator into the final `ToolCall`s, dropping any entry whose name
+/// never arrived (e.g. a stray/incomplete index).
+fn finish_tool_calls(acc: Vec<PartialToolCall>) -> Vec<ToolCall> {
+    acc.into_iter()
+        .filter(|p| !p.name.is_empty())
+        .map(|p| ToolCall {
+            id: p.id,
+            name: p.name,
+            arguments: p.arguments,
+        })
+        .collect()
+}
+
+/// Run one step of the OpenAI tool-calling agent loop: stream a chat completion,
+/// forwarding text deltas to `on_token`, and return the accumulated content, any
+/// tool calls the model wants to make, and token usage for this step.
+pub async fn openai_agent_step(
+    api_key: &str,
+    model: &str,
+    messages: &[AgentTurn],
+    tools: &serde_json::Value,
+    on_token: &mut (impl FnMut(&str) + Send),
+) -> Result<AgentStep> {
+    let body = serde_json::json!({
+        "model": model,
+        "messages": messages,
+        "tools": tools,
+        "stream": true,
+        "stream_options": {"include_usage": true},
+    });
+    let resp = http_client()
+        .post("https://api.openai.com/v1/chat/completions")
+        .bearer_auth(api_key)
+        .json(&body)
+        .send()
+        .await?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let detail = resp.text().await.unwrap_or_default();
+        return Err(Error::Provider(format!(
+            "OpenAI error ({status}): {detail}"
+        )));
+    }
+
+    let mut content = String::new();
+    let mut tool_acc: Vec<PartialToolCall> = Vec::new();
+    let mut total_tokens = 0u64;
+
+    // Bespoke SSE loop (mirrors `consume_sse`'s chunk-buffering: bytes can arrive
+    // split mid-line, so we accumulate into `buf` and only drain complete lines).
+    let mut stream = resp.bytes_stream();
+    let mut buf = String::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        buf.push_str(&String::from_utf8_lossy(&chunk));
+        while let Some(idx) = buf.find('\n') {
+            let line: String = buf.drain(..=idx).collect();
+            let line = line.trim();
+            let Some(data) = line.strip_prefix("data:") else {
+                continue;
+            };
+            let data = data.trim();
+            if data.is_empty() || data == "[DONE]" {
+                continue;
+            }
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(data) else {
+                continue;
+            };
+
+            if let Some(usage) = v.get("usage").filter(|u| !u.is_null()) {
+                if let Some(t) = usage.get("total_tokens").and_then(|t| t.as_u64()) {
+                    total_tokens = t;
+                }
+            }
+
+            let Some(choice) = v.get("choices").and_then(|c| c.get(0)) else {
+                continue;
+            };
+            let Some(delta) = choice.get("delta") else {
+                continue;
+            };
+            if let Some(text) = delta.get("content").and_then(|c| c.as_str()) {
+                if !text.is_empty() {
+                    on_token(text);
+                    content.push_str(text);
+                }
+            }
+            if let Some(calls) = delta.get("tool_calls").and_then(|c| c.as_array()) {
+                for call in calls {
+                    accumulate_tool_delta(&mut tool_acc, call);
+                }
+            }
+        }
+    }
+
+    Ok(AgentStep {
+        content,
+        tool_calls: finish_tool_calls(tool_acc),
+        total_tokens,
+    })
+}
+
 async fn stream_openai(
     key: &str,
     model: &str,
@@ -405,4 +595,56 @@ async fn consume_sse(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tool_delta_accumulation_assembles_fragmented_calls() {
+        let mut acc = Vec::new();
+        for chunk in [
+            r##"{"index":0,"id":"call_a","type":"function","function":{"name":"slack_send_message","arguments":""}}"##,
+            r##"{"index":0,"function":{"arguments":"{\"channel\":"}}"##,
+            r##"{"index":0,"function":{"arguments":"\"#general\",\"text\":\"hi\"}"}}"##,
+            r##"{"index":1,"id":"call_b","type":"function","function":{"name":"list_docs","arguments":"{}"}}"##,
+        ] {
+            accumulate_tool_delta(&mut acc, &serde_json::from_str(chunk).unwrap());
+        }
+        let calls = finish_tool_calls(acc);
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].name, "slack_send_message");
+        assert_eq!(calls[0].arguments, r##"{"channel":"#general","text":"hi"}"##);
+        assert_eq!(calls[1].name, "list_docs");
+    }
+
+    #[test]
+    fn agent_turn_serializes_openai_shapes() {
+        let assistant = AgentTurn {
+            role: "assistant".into(),
+            content: None,
+            tool_calls: Some(vec![ToolCallOut {
+                id: "call_a".into(),
+                kind: "function".into(),
+                function: FunctionCall {
+                    name: "list_docs".into(),
+                    arguments: "{}".into(),
+                },
+            }]),
+            tool_call_id: None,
+        };
+        let v = serde_json::to_value(&assistant).unwrap();
+        assert!(v.get("content").is_none());
+        assert_eq!(v["tool_calls"][0]["function"]["name"], "list_docs");
+        let tool = AgentTurn {
+            role: "tool".into(),
+            content: Some("[]".into()),
+            tool_calls: None,
+            tool_call_id: Some("call_a".into()),
+        };
+        let v = serde_json::to_value(&tool).unwrap();
+        assert_eq!(v["tool_call_id"], "call_a");
+        assert!(v.get("tool_calls").is_none());
+    }
 }

@@ -1261,12 +1261,60 @@ pub async fn whatsapp_handle_text(db: &Db, text: &str) -> Result<()> {
     Ok(())
 }
 
-/// Handle an inbound WhatsApp voice note: transcribe it and run the transcript
-/// through the same text pipeline as `whatsapp_handle_text` (a text reply now;
-/// Task 3 upgrades the reply itself to a voice note). The OpenAI key is checked
-/// FIRST — before touching the network at all — so the no-creds path is
-/// deterministic; every other failure (fetch, transcription) is also swallowed so
-/// a webhook handler never surfaces an `Err`.
+const TTS_VOICE_SETTING: &str = "tts_voice";
+
+/// Configured TTS voice (setting `tts_voice`), falling back to
+/// `audio::DEFAULT_TTS_VOICE` when unset or invalid. Also read by Task 5.
+pub fn tts_voice_setting(db: &Db) -> String {
+    match db.get_setting(TTS_VOICE_SETTING) {
+        Ok(Some(v)) if audio::is_valid_voice(&v) => v,
+        _ => audio::DEFAULT_TTS_VOICE.to_string(),
+    }
+}
+
+/// Whether a reply is worth synthesizing as a voice note: not empty, and not so
+/// long that a multi-minute TTS clip would be bad UX. Text (silent, skimmable,
+/// instant) is the better fallback for both extremes.
+pub fn reply_is_voice_suitable(reply: &str) -> bool {
+    let trimmed = reply.trim();
+    !trimmed.is_empty() && trimmed.chars().count() <= 2000
+}
+
+/// Reply over WhatsApp, preferring a synthesized voice note and falling back to
+/// text on any failure (unsuitable reply, synth error, or send error). Best-effort:
+/// swallows all errors, since the caller is a webhook handler.
+async fn reply_over_whatsapp(db: &Db, my_number: &str, openai_key: &str, reply: &str) {
+    if reply_is_voice_suitable(reply) {
+        let voice_result = async {
+            let ogg = audio::synthesize(
+                openai_key,
+                audio::DEFAULT_TTS_MODEL,
+                &tts_voice_setting(db),
+                reply,
+                "opus",
+            )
+            .await?;
+            whatsapp::send_voice_note(my_number, ogg).await
+        }
+        .await;
+        if let Err(e) = voice_result {
+            eprintln!("whatsapp_handle_audio: voice reply failed, falling back to text: {e}");
+        } else {
+            return;
+        }
+    }
+
+    if let Err(e) = whatsapp::send_message(my_number, reply).await {
+        eprintln!("whatsapp_handle_audio: send_message failed: {e}");
+    }
+}
+
+/// Handle an inbound WhatsApp voice note: transcribe it, run the transcript through
+/// the agent loop over the same rolling session as `whatsapp_handle_text`, and reply
+/// with a synthesized voice note (falling back to text on any failure). The OpenAI
+/// key is checked FIRST — before touching the network at all — so the no-creds path
+/// is deterministic; every other failure (fetch, transcription, brain turn) is also
+/// swallowed so a webhook handler never surfaces an `Err`.
 pub async fn whatsapp_handle_audio(db: &Db, media_id: &str) -> Result<()> {
     let Some(key) = secrets::get_api_key("openai")? else {
         best_effort_reply(db, "I can't transcribe voice notes without an OpenAI key set.").await;
@@ -1291,7 +1339,38 @@ pub async fn whatsapp_handle_audio(db: &Db, media_id: &str) -> Result<()> {
         }
     };
 
-    whatsapp_handle_text(db, &text).await
+    let conv = whatsapp_session_conversation(db)?;
+    db.add_message(conv, "user", &text)?;
+
+    let last_id_before = db.get_messages(conv)?.last().map(|m| m.id).unwrap_or(0);
+
+    let last_error: std::sync::Arc<std::sync::Mutex<Option<String>>> = Default::default();
+    let on_event = {
+        let last_error = last_error.clone();
+        move |ev: ChatEvent| {
+            if let ChatEvent::Error { message } = ev {
+                *last_error.lock().unwrap() = Some(message);
+            }
+        }
+    };
+    let _ = send_chat(db, conv, &on_event).await;
+
+    let Some(my_number) = db.get_setting(WHATSAPP_MY_NUMBER_SETTING)? else {
+        eprintln!("whatsapp_handle_audio: no whatsapp_my_number set, nowhere to reply");
+        return Ok(());
+    };
+
+    let reply = match db.get_messages(conv)?.into_iter().last() {
+        Some(m) if m.id != last_id_before && m.role == "assistant" => m.content,
+        _ => last_error
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| "I hit a problem handling that.".to_string()),
+    };
+
+    reply_over_whatsapp(db, &my_number, &key, &reply).await;
+    Ok(())
 }
 
 /// Best-effort reply to the owner's configured WhatsApp number. Used for the
@@ -1991,6 +2070,23 @@ mod tests {
         // (download included), so this must return Ok without touching the network.
         let db = test_db();
         assert!(whatsapp_handle_audio(&db, "nonexistent-media").await.is_ok());
+    }
+
+    #[test]
+    fn voice_reply_suitability() {
+        assert!(reply_is_voice_suitable("Sure, your meeting is at 3pm."));
+        assert!(!reply_is_voice_suitable(""));
+        assert!(!reply_is_voice_suitable(&"x".repeat(2500)));
+    }
+
+    #[test]
+    fn tts_voice_setting_defaults_and_validates() {
+        let db = test_db();
+        assert_eq!(tts_voice_setting(&db), "nova");
+        db.set_setting("tts_voice", "shimmer").unwrap();
+        assert_eq!(tts_voice_setting(&db), "shimmer");
+        db.set_setting("tts_voice", "bogus").unwrap();
+        assert_eq!(tts_voice_setting(&db), "nova"); // invalid → default
     }
 
     #[tokio::test]

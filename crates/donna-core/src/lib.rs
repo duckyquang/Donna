@@ -16,6 +16,7 @@ pub mod providers;
 pub mod retrieval;
 pub mod review;
 pub mod scheduler;
+pub mod skills;
 pub mod tools;
 pub mod secrets;
 pub mod trust;

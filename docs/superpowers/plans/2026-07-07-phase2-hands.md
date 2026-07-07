@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Donna can *do* things: chat runs an OpenAI tool-calling agent loop over ~28 tools with risk classes, gated by a trust engine — Read/Write execute silently, Outbound asks first via approval cards, with a policy table the user controls.
+**Goal:** Donna can *do* things: chat runs an OpenAI tool-calling agent loop over 31 tools with risk classes, gated by a trust engine — Read/Write execute silently, Outbound asks first via approval cards, with a policy table the user controls.
 
 **Architecture:** New `agent` + `tools` + `trust` modules in donna-core. `providers.rs` gains one new OpenAI-only entry point (`openai_agent_step`) that streams content deltas AND accumulates tool-call deltas — the existing `stream_chat`/`consume_sse` used by everything else is untouched. `ops::send_chat` routes to the agent loop when provider is `openai` (with API key); all other providers keep today's plain path. Approvals and trust policies are DB tables surfaced over new RPC arms; the Chat UI shows tool-status lines while streaming and DB-backed approval cards; Settings gets a policy editor.
 
@@ -214,7 +214,7 @@ git push
   - `pub fn summarize_call(name: &str, args: &serde_json::Value) -> String` — human-readable one-liner for approval cards / Tool events ("Send Slack message to #general", "Create calendar event 'Standup'…"). A match over Outbound + notable Write tools; default `"{name} {args}"` truncated to 120 chars.
 - Consumes: ops fns and integration fns per the inventory below; `ops::remember` from Task 1.
 
-**The registry (28 tools; args schemas are OpenAI JSON Schema objects):**
+**The registry (31 tools; args schemas are OpenAI JSON Schema objects):**
 
 Read (12): `calendar_list_events(time_min, time_max: string RFC3339)`, `gmail_list_messages(max_results: integer ≤25, default 10)`, `drive_list_files(max_results: integer ≤25)`, `slack_list_channels()`, `github_list_repos(max_results)`, `github_list_issues(max_results)`, `linear_list_issues(max_results)`, `notion_list_pages(max_results)` → integrations::notion::search_pages, `fathom_recent_meetings(limit ≤10)` → integrations::fathom::list_recent_meetings, `news_top_stories(limit ≤15)`, `weather_current(lat: number, lon: number)` → `integrations::weather::fetch` + `format_summary` (return the formatted string), `kb_search(query: string)` → `retrieval::search_for_prompt(query, db, &RetrievalConfig{…from settings})`.
 Plus reads over Donna's own data (5): `list_docs()`, `get_doc(id: integer)`, `list_routines()`, `reading_list_get()`, `habit_list()`.
@@ -231,14 +231,14 @@ Note `calendar_delete_event` is Write per the spec's own-calendar rule; `summari
 #[tokio::test]
 async fn registry_names_unique_and_schemas_valid() {
     let defs = all();
-    assert_eq!(defs.len(), 28);
+    assert_eq!(defs.len(), 31);
     let names: std::collections::HashSet<_> = defs.iter().map(|d| d.name).collect();
     assert_eq!(names.len(), defs.len());
     for d in &defs {
         assert_eq!(d.params["type"], "object", "{} params must be an object schema", d.name);
     }
     let json = openai_tools_json();
-    assert_eq!(json.as_array().unwrap().len(), 28);
+    assert_eq!(json.as_array().unwrap().len(), 31);
 }
 
 #[tokio::test]
@@ -266,7 +266,7 @@ fn truncation_and_summaries() {
 
 ```bash
 git add -A
-git commit -m "Add agent tool registry: 28 tools with risk classes, dispatch, and summaries
+git commit -m "Add agent tool registry: 31 tools with risk classes, dispatch, and summaries
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 git push

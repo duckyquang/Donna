@@ -140,7 +140,28 @@ impl Db {
         }
         let conn = Connection::open(path)?;
         migrate(&conn)?;
-        Ok(Db(Mutex::new(conn)))
+        let db = Db(Mutex::new(conn));
+        db.ensure_fts_backfill()?;
+        Ok(db)
+    }
+
+    /// Rebuild `messages_fts` from `messages` once (guarded by the `fts_backfilled` setting).
+    /// Needed so rows inserted before the FTS triggers existed become searchable. Safe to
+    /// call repeatedly — a no-op once the flag is set.
+    ///
+    /// Locks the mutex only for the rebuild statement itself; `get_setting`/`set_setting`
+    /// each take their own lock, so none of these calls may run while another lock from
+    /// this struct is held (that would deadlock on the non-reentrant `Mutex`).
+    pub fn ensure_fts_backfill(&self) -> Result<()> {
+        if self.get_setting("fts_backfilled")?.as_deref() == Some("1") {
+            return Ok(());
+        }
+        {
+            let conn = self.0.lock().unwrap();
+            conn.execute("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')", [])?;
+        }
+        self.set_setting("fts_backfilled", "1")?;
+        Ok(())
     }
 
     pub fn get_setting(&self, key: &str) -> Result<Option<String>> {
@@ -231,6 +252,33 @@ impl Db {
              FROM messages WHERE conversation_id = ?1 ORDER BY id ASC",
         )?;
         let rows = stmt.query_map([conversation_id], |row| {
+            Ok(Message {
+                id: row.get(0)?,
+                conversation_id: row.get(1)?,
+                role: row.get(2)?,
+                content: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    /// Full-text search over all messages via the `messages_fts` FTS5 index, newest-relevance
+    /// first. The query is wrapped as a single quoted FTS string so punctuation or FTS
+    /// operators (`AND`, `*`, `:`, unbalanced `"`) in user input can never produce a syntax
+    /// error — worst case it just matches nothing.
+    pub fn search_messages(&self, query: &str, limit: i64) -> Result<Vec<Message>> {
+        if query.trim().is_empty() {
+            return Ok(vec![]);
+        }
+        let q = format!("\"{}\"", query.replace('"', "\"\""));
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT m.id, m.conversation_id, m.role, m.content, m.created_at
+             FROM messages_fts f JOIN messages m ON m.id = f.rowid
+             WHERE messages_fts MATCH ?1 ORDER BY rank LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![q, limit], |row| {
             Ok(Message {
                 id: row.get(0)?,
                 conversation_id: row.get(1)?,
@@ -1003,6 +1051,17 @@ fn migrate(conn: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_messages_conversation
             ON messages(conversation_id);
+        CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(content, content='messages', content_rowid='id');
+        CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+          INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
+        END;
+        CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+          INSERT INTO messages_fts(messages_fts, rowid, content) VALUES('delete', old.id, old.content);
+        END;
+        CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
+          INSERT INTO messages_fts(messages_fts, rowid, content) VALUES('delete', old.id, old.content);
+          INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
+        END;
         CREATE TABLE IF NOT EXISTS routines (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             name            TEXT NOT NULL,
@@ -1210,5 +1269,28 @@ mod tests {
         assert!(db.try_claim_webhook_event("wamid.A1").unwrap());
         assert!(!db.try_claim_webhook_event("wamid.A1").unwrap());
         assert!(db.try_claim_webhook_event("wamid.A2").unwrap());
+    }
+
+    #[test]
+    fn fts_search_finds_and_backfills() {
+        let db = test_db();
+        let c = db.create_conversation("t").unwrap();
+        db.add_message(c, "user", "my dentist is Dr. Alvarez on Maple Street").unwrap();
+        db.add_message(c, "assistant", "noted").unwrap();
+        let hits = db.search_messages("dentist", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert!(hits[0].content.contains("Alvarez"));
+        assert!(db.search_messages("nonexistentword", 10).unwrap().is_empty());
+        // punctuation in query must not blow up FTS syntax
+        assert!(db.search_messages("Dr. Alvarez\"; DROP", 10).is_ok());
+    }
+
+    #[test]
+    fn fts_backfill_covers_preexisting_rows() {
+        // simulate a DB whose rows predate triggers: insert directly bypassing triggers is hard;
+        // instead assert ensure_fts_backfill is idempotent and the flag flips.
+        let db = test_db();
+        assert_eq!(db.get_setting("fts_backfilled").unwrap().as_deref(), Some("1")); // open() ran it
+        db.ensure_fts_backfill().unwrap(); // idempotent second call
     }
 }

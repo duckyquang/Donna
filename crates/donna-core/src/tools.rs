@@ -184,6 +184,21 @@ pub fn all() -> Vec<ToolDef> {
             risk: Risk::Read,
         },
         ToolDef {
+            name: "session_search",
+            description: "Full-text search across the user's entire message history (all past \
+                conversations). Use to recall what the user told you before. Returns matching \
+                messages newest-relevance first.",
+            params: json!({
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "What to search for."},
+                    "limit": {"type": "integer", "description": "How many messages to return (max 25, default 10).", "maximum": 25}
+                },
+                "required": ["query"]
+            }),
+            risk: Risk::Read,
+        },
+        ToolDef {
             name: "kb_search",
             description: "Search Donna's knowledge base (the user's saved memories / mind map) \
                 for facts relevant to a query. Returns the top matching memories. Use before \
@@ -589,6 +604,18 @@ pub async fn execute(db: &Db, name: &str, args: &Value) -> Result<String> {
             let w = weather::fetch(a.lat, a.lon).await?;
             ok(weather::format_summary(&w))
         }
+        "session_search" => {
+            #[derive(Deserialize)]
+            struct A { query: String, #[serde(default = "ten_i64")] limit: i64 }
+            let a: A = parse(name, args)?;
+            #[derive(serde::Serialize)]
+            struct Hit { conversation_id: i64, role: String, content: String, created_at: String }
+            let hits = db.search_messages(&a.query, a.limit.min(25))?
+                .into_iter()
+                .map(|m| Hit { conversation_id: m.conversation_id, role: m.role, content: m.content, created_at: m.created_at })
+                .collect::<Vec<_>>();
+            ok(hits)
+        }
         "kb_search" => {
             #[derive(Deserialize)]
             struct A { query: String }
@@ -730,6 +757,7 @@ pub async fn execute(db: &Db, name: &str, args: &Value) -> Result<String> {
 }
 
 fn ten() -> u32 { 10 }
+fn ten_i64() -> i64 { 10 }
 fn fifteen() -> usize { 15 }
 
 /// Human one-liner for approval cards / Tool events. Renders every Outbound tool plus
@@ -773,7 +801,8 @@ mod tests {
     // actionable spec; "28" is an unreconciled round number repeated in the headline.
     // Implementing all 31 named tools rather than arbitrarily dropping 3 the plan lists.
     // Phase 4 Task 1 adds `memory_update` (Write), bringing the total to 32.
-    const TOOL_COUNT: usize = 32;
+    // Phase 4 Task 2 adds `session_search` (Read), bringing the total to 33.
+    const TOOL_COUNT: usize = 33;
 
     #[tokio::test]
     async fn registry_names_unique_and_schemas_valid() {
@@ -804,7 +833,7 @@ mod tests {
         let _kb = crate::knowledge::tests::temp_kb();
         let out = execute(&db, "memory_update", &serde_json::json!({"file":"user","action":"add","text":"Likes tea"})).await.unwrap();
         assert!(out.contains("Likes tea"));
-        assert_eq!(all().len(), 32);
+        assert_eq!(all().len(), 33);
     }
 
     #[test]
@@ -812,5 +841,15 @@ mod tests {
         assert!(truncate_result("x".repeat(10_000)).len() < 6_100);
         let s = summarize_call("slack_send_message", &serde_json::json!({"channel":"#general","text":"hi"}));
         assert!(s.contains("#general"));
+    }
+
+    #[tokio::test]
+    async fn session_search_tool() {
+        let db = test_db();
+        let c = db.create_conversation("t").unwrap();
+        db.add_message(c, "user", "remember the wifi password is hunter2").unwrap();
+        let out = execute(&db, "session_search", &serde_json::json!({"query":"wifi password"})).await.unwrap();
+        assert!(out.contains("hunter2"));
+        assert_eq!(all().len(), 33);
     }
 }

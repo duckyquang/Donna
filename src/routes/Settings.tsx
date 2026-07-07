@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { Check, RefreshCw, Trash2 } from "lucide-react";
 import { PageShell } from "../components/PageShell";
 import { PROVIDERS, type ProviderId } from "../lib/models/providers";
 import { api, type AutonomyLevel } from "../lib/api";
+import { serverConfig, setServerConfig, serverReachable } from "../lib/server";
 import { useConfig } from "../lib/useConfig";
 import { Button, Spinner } from "../components/ui";
 
@@ -38,6 +40,40 @@ export default function Settings() {
   const [loadingModels, setLoadingModels] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [serverUrl, setServerUrl] = useState(serverConfig().url);
+  const [serverToken, setServerToken] = useState(serverConfig().token);
+  const [testResult, setTestResult] = useState<"ok" | "fail" | null>(null);
+  const [testing, setTesting] = useState(false);
+
+  const testConnection = async () => {
+    setServerConfig({ url: serverUrl.trim(), token: serverToken.trim() });
+    setTesting(true);
+    setTestResult(null);
+    try {
+      setTestResult((await serverReachable()) ? "ok" : "fail");
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const [exporting, setExporting] = useState(false);
+
+  const exportBundle = async () => {
+    setError(null);
+    setStatus(null);
+    const destDir = await open({ directory: true, multiple: false });
+    if (!destDir || Array.isArray(destDir)) return;
+    setExporting(true);
+    try {
+      const path = await api.exportServerBundle(destDir);
+      setStatus(`Exported bundle to ${path}`);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const meta = PROVIDERS.find((p) => p.id === provider)!;
   const isLocal = meta.kind === "local";
@@ -125,6 +161,53 @@ export default function Settings() {
       subtitle="Choose how Donna thinks — a free local model or your own API key."
     >
       <div className="space-y-6">
+        <section className="space-y-3 rounded-xl border border-white/10 bg-donna-surface p-4">
+          <div>
+            <h2 className="text-sm font-medium text-gray-300">Server</h2>
+            <p className="text-xs text-gray-500">
+              Donna's brain runs in donna-server. Point the desktop app at it.
+            </p>
+          </div>
+          <label className="block">
+            <span className="mb-1 block text-sm text-gray-300">Server URL</span>
+            <input
+              value={serverUrl}
+              onChange={(e) => setServerUrl(e.target.value)}
+              placeholder="http://localhost:8377"
+              className="w-full rounded-lg border border-white/10 bg-donna-bg px-3 py-2 text-sm text-white outline-none focus:border-donna-accent"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm text-gray-300">Access token</span>
+            <input
+              type="password"
+              value={serverToken}
+              onChange={(e) => setServerToken(e.target.value)}
+              placeholder="DONNA_TOKEN"
+              className="w-full rounded-lg border border-white/10 bg-donna-bg px-3 py-2 text-sm text-white outline-none focus:border-donna-accent"
+            />
+          </label>
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" onClick={testConnection} disabled={testing}>
+              {testing ? <Spinner /> : <RefreshCw size={16} />}
+              Test connection
+            </Button>
+            {testResult === "ok" && <span className="text-xs text-green-400">Connected ✓</span>}
+            {testResult === "fail" && <span className="text-xs text-red-400">Unreachable</span>}
+          </div>
+          <div className="border-t border-white/10 pt-3">
+            <p className="mb-2 text-xs text-gray-500">
+              Migrating from an older desktop-only install? Export your local data as a
+              bundle, then run <code className="text-gray-400">donna-server import</code>{" "}
+              with it on your server.
+            </p>
+            <Button variant="ghost" onClick={exportBundle} disabled={exporting}>
+              {exporting ? <Spinner /> : null}
+              Export server bundle…
+            </Button>
+          </div>
+        </section>
+
         <section>
           <h2 className="mb-2 text-sm font-medium text-gray-300">Provider</h2>
           <div className="grid grid-cols-2 gap-2">

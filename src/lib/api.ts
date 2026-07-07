@@ -1,10 +1,29 @@
-import { invoke as tauriInvoke, Channel } from "@tauri-apps/api/core";
+import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import type { ProviderId } from "./models/providers";
 import { ensureDesktopApp } from "./tauri";
+import { rpc, chatStream } from "./server";
+
+// Native commands must run in-process on the desktop (screen capture, OAuth loopback,
+// editor launch, project file I/O). Everything else is routed to donna-server over RPC.
+// The two streaming pairs (send_chat, quick_chat_send) go over WS via chatStream().
+const NATIVE_COMMANDS = new Set([
+  "quick_chat_context",
+  "google_set_client",
+  "google_connect",
+  "export_google_secrets",
+  "project_open_in_editor",
+  "project_list_files",
+  "project_read_file",
+  "project_write_file",
+  "export_server_bundle",
+]);
 
 function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  ensureDesktopApp();
-  return tauriInvoke<T>(cmd, args);
+  if (NATIVE_COMMANDS.has(cmd)) {
+    ensureDesktopApp();
+    return tauriInvoke<T>(cmd, args);
+  }
+  return rpc<T>(cmd, args);
 }
 
 export type AutonomyLevel = "confirm" | "act" | "autonomous";
@@ -509,13 +528,17 @@ export const api = {
    * Stream an assistant reply for a conversation. Returns a promise that resolves when
    * the stream ends; `onEvent` fires for each token, plus a final done/error event.
    */
-  async sendChat(
+  sendChat(
     conversationId: number,
     onEvent: (event: ChatEvent) => void
   ): Promise<void> {
-    const channel = new Channel<ChatEvent>();
-    channel.onmessage = onEvent;
-    await invoke("send_chat", { conversationId, onEvent: channel });
+    return new Promise((resolve) => {
+      chatStream("send_chat", { conversationId }, (ev) => {
+        onEvent(ev as ChatEvent);
+        const t = (ev as { type?: string }).type;
+        if (t === "done" || t === "error") resolve();
+      });
+    });
   },
 
   async kgGraph(): Promise<KgGraph> {
@@ -604,11 +627,21 @@ export const api = {
     }));
   },
 
-  googleSetClient(clientId: string, clientSecret: string): Promise<void> {
-    return invoke("google_set_client", { clientId, clientSecret });
+  /** Write the OAuth client to both stores: desktop keychain (native google_connect,
+   * export_google_secrets) and the server FileStore (integrations_status gate,
+   * server-side Google API calls / token refresh). */
+  async googleSetClient(clientId: string, clientSecret: string): Promise<void> {
+    await invoke("google_set_client", { clientId, clientSecret });
+    await rpc("google_set_client", { clientId, clientSecret });
   },
   googleConnect(): Promise<void> {
     return invoke("google_connect");
+  },
+  /** Run the desktop OAuth flow, then push the resulting Google secrets to the server. */
+  async googleConnectAndSync(): Promise<void> {
+    await invoke("google_connect");
+    const { client, token } = await invoke<{ client: string; token: string }>("export_google_secrets");
+    await rpc("import_google_secrets", { client, token });
   },
   googleDisconnect(): Promise<void> {
     return invoke("google_disconnect");
@@ -674,13 +707,26 @@ export const api = {
     dailyTime: string;
     prompt: string;
   }): Promise<Routine> {
-    return toRoutine(
-      await invoke<RawRoutine>("create_routine", {
+    const [h, m] = input.dailyTime.split(":").map(Number);
+    // ops::create_routine returns the new row id (i64), not a Routine — build the
+    // view object locally from the id + the input we already hold.
+    const id = await rpc<number>("create_routine", {
+      input: {
         name: input.name,
-        dailyTime: input.dailyTime,
+        schedule_type: "daily",
+        hour: h,
+        minute: m,
         prompt: input.prompt,
-      })
-    );
+      },
+    });
+    return {
+      id: String(id),
+      name: input.name,
+      enabled: true,
+      dailyTime: input.dailyTime,
+      prompt: input.prompt,
+      builtin: false,
+    };
   },
 
   deleteRoutine(id: string): Promise<void> {
@@ -819,10 +865,12 @@ export const api = {
     invoke<Project>("project_create", { name, template, path }),
   projectDelete: (id: number) => invoke<void>("project_delete", { id }),
   projectOpenInEditor: (path: string) => invoke<void>("project_open_in_editor", { path }),
-  projectListFiles: (projectId: number) => invoke<ProjectFile[]>("project_list_files", { project_id: projectId }),
-  projectReadFile: (projectId: number, path: string) => invoke<string>("project_read_file", { project_id: projectId, path }),
-  projectWriteFile: (projectId: number, path: string, content: string) =>
-    invoke<void>("project_write_file", { project_id: projectId, path, content }),
+  // Native project file I/O takes the project root path directly (from project_list),
+  // so the desktop never needs to open the DB to resolve it.
+  projectListFiles: (projectPath: string) => invoke<ProjectFile[]>("project_list_files", { projectPath }),
+  projectReadFile: (projectPath: string, path: string) => invoke<string>("project_read_file", { projectPath, path }),
+  projectWriteFile: (projectPath: string, path: string, content: string) =>
+    invoke<void>("project_write_file", { projectPath, path, content }),
 
   // --- Discord ---
   discordSetToken: (token: string) => invoke<void>("discord_set_token", { token }),
@@ -852,7 +900,14 @@ export const api = {
   habitLoggedToday: (habitId: number) => invoke<boolean>("habit_logged_today", { habit_id: habitId }),
 
   // --- Project extras ---
-  projectStatusReport: (projectId: number) => invoke<string>("project_status_report", { project_id: projectId }),
+  // Status report is a hybrid: the desktop walks the local project folder (native),
+  // then the server generates the report from those contents and saves it as a doc +
+  // notification (it holds the provider config and the shared DB).
+  async projectStatusReport(projectPath: string, name: string, template: string): Promise<string> {
+    ensureDesktopApp();
+    const fileContents = await tauriInvoke<string>("project_status_report", { projectPath });
+    return rpc<string>("project_status_report", { name, template, fileContents });
+  },
 
   // --- News (structured) ---
   newsListItems: (limit = 10) => invoke<NewsItemStructured[]>("news_list_items", { limit }),
@@ -860,13 +915,21 @@ export const api = {
 
   // --- Quick Chat (Cmd+D overlay) ---
   quickChatContext: () => invoke<QuickChatCtx>("quick_chat_context"),
-  async quickChatSend(
+  /** Streams a quick-chat reply. Returns a promise that resolves when the stream ends. */
+  quickChatSend(
     message: string,
     appName: string,
     onEvent: (event: ChatEvent) => void
   ): Promise<void> {
-    const channel = new Channel<ChatEvent>();
-    channel.onmessage = onEvent;
-    await invoke("quick_chat_send", { message, appName, onEvent: channel });
+    return new Promise((resolve) => {
+      chatStream("quick_chat_send", { message, appName }, (ev) => {
+        onEvent(ev as ChatEvent);
+        const t = (ev as { type?: string }).type;
+        if (t === "done" || t === "error") resolve();
+      });
+    });
   },
+
+  // --- Migration: export old local data for donna-server import ---
+  exportServerBundle: (destDir: string) => invoke<string>("export_server_bundle", { destDir }),
 };

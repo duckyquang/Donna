@@ -72,21 +72,21 @@ export default function Projects() {
     }
   };
 
-  const loadFiles = async (projectId: number) => {
+  const loadFiles = async (projectPath: string) => {
     try {
-      const f = await api.projectListFiles(projectId);
+      const f = await api.projectListFiles(projectPath);
       setFiles(f);
     } catch {
       setFiles([]);
     }
   };
 
-  const openFile = async (projectId: number, path: string) => {
+  const openFile = async (projectPath: string, path: string) => {
     if (files.find((f) => f.path === path)?.is_dir) return;
     setSelectedFile(path);
     setFileLoading(true);
     try {
-      const content = await api.projectReadFile(projectId, path);
+      const content = await api.projectReadFile(projectPath, path);
       setFileContent(content);
     } catch {
       setFileContent("");
@@ -96,10 +96,10 @@ export default function Projects() {
   };
 
   const saveFile = async () => {
-    if (!activeProjectId || !selectedFile) return;
+    if (!activeProject || !selectedFile) return;
     setSaving(true);
     try {
-      await api.projectWriteFile(activeProjectId, selectedFile, fileContent);
+      await api.projectWriteFile(activeProject.path, selectedFile, fileContent);
     } finally {
       setSaving(false);
     }
@@ -143,15 +143,16 @@ export default function Projects() {
     loadProjects();
   }, []);
 
+  const activeProject = projects.find((p) => p.id === activeProjectId);
+
   useEffect(() => {
-    if (activeProjectId) {
-      loadFiles(activeProjectId);
+    if (activeProject) {
+      loadFiles(activeProject.path);
       setSelectedFile(null);
       setFileContent("");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProjectId]);
-
-  const activeProject = projects.find((p) => p.id === activeProjectId);
 
   if (loading) {
     return (
@@ -238,7 +239,7 @@ export default function Projects() {
             {files.map((f) => (
               <button
                 key={f.path}
-                onClick={() => activeProjectId && openFile(activeProjectId, f.path)}
+                onClick={() => activeProject && openFile(activeProject.path, f.path)}
                 className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors ${
                   selectedFile === f.path
                     ? "bg-donna-accent-dim text-donna-accent-light"
@@ -336,7 +337,7 @@ export default function Projects() {
                 <Button size="sm" variant="ghost" onClick={async () => {
                   if (!activeProject) return;
                   try {
-                    await api.projectStatusReport(activeProject.id);
+                    await api.projectStatusReport(activeProject.path, activeProject.name, activeProject.template);
                     // Report saved as doc + notification
                   } catch {
                     // ignore
@@ -355,7 +356,7 @@ export default function Projects() {
                   {files.filter(f => !f.is_dir).map((f) => (
                     <button
                       key={f.path}
-                      onClick={() => activeProjectId && openFile(activeProjectId, f.path)}
+                      onClick={() => activeProject && openFile(activeProject.path, f.path)}
                       className="flex w-full items-center gap-3 rounded px-3 py-2.5 text-sm text-donna-text-secondary transition-colors hover:bg-donna-surface-hover hover:text-donna-text"
                     >
                       <FileText size={14} className="shrink-0 text-donna-muted" />

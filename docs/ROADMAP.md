@@ -55,3 +55,32 @@ for the full architecture and design rationale behind each item.
 - [x] Cross-platform packaged installers (macOS, Windows, Linux) — CI on version tags
 - [x] Docs site and contributor guides — see `docs/`
 - [x] Full Gmail compose/draft and Drive file management UI
+
+## Phase 7 — Server-first foundation ✅ (Phase 1 of 6, see spec)
+
+Donna is evolving from a desktop chat app into a 24/7 proactive assistant reachable by
+text and voice. Full design:
+[`docs/superpowers/specs/2026-07-07-donna-jarvis-design.md`](superpowers/specs/2026-07-07-donna-jarvis-design.md).
+The spec's own build order has six phases; this roadmap entry covers Phase 1
+(Foundation) of that plan.
+
+- [x] Cargo workspace extraction: `donna-core` crate pulled out of `src-tauri`
+      (integrations, oauth, providers, db, knowledge base, embeddings, retrieval,
+      scheduler)
+- [x] `donna-server` grown into an axum host: RPC dispatcher + WebSocket chat/notify
+      streaming, bearer auth, health check
+- [x] Desktop app becomes a client of donna-server: `api.ts` swaps Tauri `invoke()`
+      for fetch/WS + bearer token; "Donna is unreachable" banner when offline
+- [x] Migration bundle: `donna-server import <bundle>` + desktop "Export server
+      bundle…" to move an existing desktop-only install onto the server
+- [x] Docker: workspace-aware multi-stage build (stubs `src-tauri` so only
+      `donna-server` compiles), `docker-compose.yml` with a `cloudflared` tunnel
+      sidecar for optional public HTTPS
+
+Not yet built (Phases 2–6 of the spec):
+- [ ] Agent loop, tool registry, trust engine (earned autonomy for outbound actions)
+- [ ] Two-way WhatsApp (webhook, allowlist, voice notes)
+- [ ] `USER.md` / `MEMORY.md`, FTS5 message search, events log, background review,
+      suggestion queue, agentic `[SILENT]` routines
+- [ ] Voice: desktop push-to-talk mode, then WhatsApp voice notes
+- [ ] Skills system (`skills_list` / `skill_view` / `skill_create` via suggestions)

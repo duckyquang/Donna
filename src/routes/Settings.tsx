@@ -48,6 +48,7 @@ export default function Settings() {
   const [model, setModel] = useState("");
   const [ollamaHost, setOllamaHost] = useState("http://localhost:11434");
   const [embedModel, setEmbedModel] = useState("nomic-embed-text");
+  const [reviewModel, setReviewModel] = useState("");
   const [autonomyLevel, setAutonomyLevel] = useState<AutonomyLevel>("confirm");
   const [apiKey, setApiKey] = useState("");
   const [hasKey, setHasKey] = useState(false);
@@ -120,6 +121,7 @@ export default function Settings() {
       setModel(config.model);
       setOllamaHost(config.ollamaHost);
       setEmbedModel(config.embedModel ?? "nomic-embed-text");
+      setReviewModel(config.reviewModel ?? "");
       setAutonomyLevel(config.autonomyLevel ?? "confirm");
     }
   }, [config]);
@@ -151,6 +153,7 @@ export default function Settings() {
           model,
           ollamaHost,
           embedModel,
+          reviewModel,
           onboarded: true,
           profileOnboarded: config?.profileOnboarded ?? false,
           autonomyLevel,
@@ -180,6 +183,7 @@ export default function Settings() {
         model,
         ollamaHost,
         embedModel,
+        reviewModel,
         onboarded: true,
         profileOnboarded: config?.profileOnboarded ?? false,
         autonomyLevel,
@@ -342,6 +346,19 @@ export default function Settings() {
           {!models.length && model && (
             <p className="text-xs text-gray-500">Current model: {model}</p>
           )}
+
+          <label className="block">
+            <span className="mb-1 block text-sm text-gray-300">Background review model</span>
+            <input
+              value={reviewModel}
+              onChange={(e) => setReviewModel(e.target.value)}
+              placeholder="defaults to your main model"
+              className="w-full rounded-lg border border-white/10 bg-donna-bg px-3 py-2 text-sm text-white outline-none focus:border-donna-accent"
+            />
+            <span className="mt-1 block text-xs text-gray-500">
+              Used by the nightly background review that curates memory and files suggestions.
+            </span>
+          </label>
         </section>
 
         <section>

@@ -137,6 +137,9 @@ pub struct AppConfig {
     /// Ollama embedding model for semantic memory retrieval.
     #[serde(default = "default_embed_model")]
     pub embed_model: String,
+    /// Model the nightly background review uses; empty means "use `model`" (see `review_model()`).
+    #[serde(default)]
+    pub review_model: String,
 }
 
 fn default_embed_model() -> String {
@@ -162,6 +165,7 @@ pub fn load_config(db: &Db) -> Result<AppConfig> {
         embed_model: db
             .get_setting("embed_model")?
             .unwrap_or_else(|| embeddings::DEFAULT_EMBED_MODEL.into()),
+        review_model: db.get_setting("review_model")?.unwrap_or_default(),
     })
 }
 
@@ -209,6 +213,7 @@ pub fn save_config(db: &Db, config: AppConfig) -> Result<()> {
     )?;
     db.set_setting("autonomy_level", &config.autonomy_level)?;
     db.set_setting("embed_model", &config.embed_model)?;
+    db.set_setting("review_model", &config.review_model)?;
     if config.provider == "ollama" {
         spawn_ollama_warmup(config.ollama_host, config.model);
     }

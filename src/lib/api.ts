@@ -36,6 +36,8 @@ export interface AppConfig {
   profileOnboarded: boolean;
   autonomyLevel: AutonomyLevel;
   embedModel: string;
+  /** Model the nightly background review uses; empty means "use `model`". */
+  reviewModel: string;
 }
 
 export interface Routine {
@@ -151,6 +153,15 @@ export interface Approval {
   status: string;
   createdAt: string;
   resolvedAt: string | null;
+}
+
+export interface Suggestion {
+  id: number;
+  kind: string;
+  title: string;
+  body: string;
+  status: string;
+  createdAt: string;
 }
 
 export interface TrustPolicy {
@@ -317,6 +328,7 @@ interface RawConfig {
   profile_onboarded: boolean;
   autonomy_level?: AutonomyLevel;
   embed_model?: string;
+  review_model?: string;
 }
 
 interface RawRoutine {
@@ -470,6 +482,18 @@ interface RawApproval {
   resolved_at: string | null;
 }
 
+interface RawSuggestion {
+  id: number;
+  kind: string;
+  title: string;
+  body: string;
+  payload_json: string | null;
+  dedup_key: string;
+  status: string;
+  created_at: string;
+  resolved_at: string | null;
+}
+
 interface RawTrustPolicy {
   action_kind: string;
   mode: "ask" | "auto";
@@ -486,6 +510,17 @@ function toApproval(a: RawApproval): Approval {
     status: a.status,
     createdAt: a.created_at,
     resolvedAt: a.resolved_at,
+  };
+}
+
+function toSuggestion(s: RawSuggestion): Suggestion {
+  return {
+    id: s.id,
+    kind: s.kind,
+    title: s.title,
+    body: s.body,
+    status: s.status,
+    createdAt: s.created_at,
   };
 }
 
@@ -508,6 +543,7 @@ export const api = {
       profileOnboarded: c.profile_onboarded ?? false,
       autonomyLevel: c.autonomy_level ?? "confirm",
       embedModel: c.embed_model ?? "nomic-embed-text",
+      reviewModel: c.review_model ?? "",
     };
   },
 
@@ -521,6 +557,7 @@ export const api = {
         profile_onboarded: config.profileOnboarded,
         autonomy_level: config.autonomyLevel,
         embed_model: config.embedModel,
+        review_model: config.reviewModel,
       },
     });
   },
@@ -611,6 +648,13 @@ export const api = {
   },
   approvalRespond(id: number, approve: boolean): Promise<string> {
     return invoke("approval_respond", { id, approve });
+  },
+  async suggestionsList(pendingOnly: boolean): Promise<Suggestion[]> {
+    const rows = await invoke<RawSuggestion[]>("suggestions_list", { pendingOnly });
+    return rows.map(toSuggestion);
+  },
+  suggestionRespond(id: number, accept: boolean): Promise<string> {
+    return invoke("suggestion_respond", { id, accept });
   },
   async trustPoliciesList(): Promise<TrustPolicy[]> {
     const rows = await invoke<RawTrustPolicy[]>("trust_policies_list");

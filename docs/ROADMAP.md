@@ -87,8 +87,20 @@ Phase 3 (Reach) of the spec — done:
       agent-loop replies, approvals as interactive buttons. Voice notes deferred
       to Phase 5. See `donna-server/README.md` for the Meta setup guide.
 
-Not yet built (Phases 4–6 of the spec):
-- [ ] `USER.md` / `MEMORY.md`, FTS5 message search, events log, background review,
-      suggestion queue, agentic `[SILENT]` routines
+Phase 4 (Growth) of the spec — done:
+- [x] Capped `USER.md` / `MEMORY.md` curated via a `memory_update` tool (errors
+      `MEMORY_FULL` past the cap, forcing consolidation), injected into every system prompt
+- [x] FTS5 full-text `session_search` over the whole chat history, with one-time backfill
+      for messages that predate the index
+- [x] Events log (`chat request` / `tool call` / `approval`) recorded at the in-tree
+      choke points
+- [x] Nightly background review (cheap/configurable model) that curates memory and
+      files suggestions from recurring patterns
+- [x] Consent-first suggestion queue — Dashboard card with Accept/Dismiss, dismissals
+      latched by dedup key, Accept on a `routine` suggestion creates the routine
+- [x] `[SILENT]` sentinel for routines — a scheduled check that finds nothing produces
+      no doc/notification and doesn't re-fire every tick
+
+Not yet built (Phases 5–6 of the spec):
 - [ ] Voice: desktop push-to-talk mode, then WhatsApp voice notes
 - [ ] Skills system (`skills_list` / `skill_view` / `skill_create` via suggestions)

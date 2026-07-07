@@ -9,15 +9,19 @@ import {
   MessageSquare,
   ChevronDown,
   ChevronUp,
+  Sparkles,
+  Check,
+  X,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { Spinner } from "../components/ui";
+import { Spinner, Button } from "../components/ui";
 import {
   api,
   type GmailMessage,
   type CalendarEvent,
   type Notification,
   type NewsItemStructured,
+  type Suggestion,
 } from "../lib/api";
 
 function greeting() {
@@ -222,6 +226,9 @@ export default function Dashboard() {
   const [notifs, setNotifs] = useState<Notification[]>([]);
   const [notifsLoading, setNotifsLoading] = useState(true);
 
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [respondingId, setRespondingId] = useState<number | null>(null);
+
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -242,6 +249,12 @@ export default function Dashboard() {
       .then((n) => setNotifs(n.filter((x) => !x.read).slice(0, 5)))
       .catch(() => setNotifs([]))
       .finally(() => setNotifsLoading(false));
+
+    // Suggestions from Donna (pending only)
+    api
+      .suggestionsList(true)
+      .then(setSuggestions)
+      .catch(() => setSuggestions([]));
 
     // Google-gated data
     const statuses = await api.integrationsStatus().catch(() => []);
@@ -281,6 +294,21 @@ export default function Dashboard() {
     setRefreshing(false);
   };
 
+  const respondToSuggestion = async (id: number, accept: boolean) => {
+    const prev = suggestions;
+    setRespondingId(id);
+    setSuggestions((rows) => rows.filter((s) => s.id !== id)); // optimistic remove
+    try {
+      await api.suggestionRespond(id, accept);
+      const fresh = await api.suggestionsList(true).catch(() => null);
+      if (fresh) setSuggestions(fresh);
+    } catch {
+      setSuggestions(prev); // roll back on failure
+    } finally {
+      setRespondingId(null);
+    }
+  };
+
   useEffect(() => {
     loadAll();
   }, [loadAll]);
@@ -314,6 +342,47 @@ export default function Dashboard() {
             </button>
           </div>
         </div>
+
+        {/* Suggestions from Donna */}
+        {suggestions.length > 0 && (
+          <div className="mb-4">
+            <SectionCard icon={Sparkles} title="Suggestions from Donna" badge={suggestions.length}>
+              <ul className="space-y-2">
+                {suggestions.map((s) => (
+                  <li
+                    key={s.id}
+                    className="flex items-start justify-between gap-3 border-b border-white/5 pb-2.5 last:border-0 last:pb-0"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-gray-200">{s.title}</p>
+                      <p className="mt-0.5 text-[11px] text-gray-500 line-clamp-2">{s.body}</p>
+                    </div>
+                    <div className="flex flex-shrink-0 items-center gap-1.5">
+                      <Button
+                        size="sm"
+                        variant="success"
+                        onClick={() => respondToSuggestion(s.id, true)}
+                        disabled={respondingId === s.id}
+                      >
+                        <Check size={13} />
+                        Accept
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={() => respondToSuggestion(s.id, false)}
+                        disabled={respondingId === s.id}
+                      >
+                        <X size={13} />
+                        Dismiss
+                      </Button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </SectionCard>
+          </div>
+        )}
 
         {/* Grid */}
         <div className="grid grid-cols-5 gap-4">

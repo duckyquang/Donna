@@ -61,14 +61,13 @@ mod tests {
 
     fn test_db() -> Db {
         crate::secrets::init_test_file_store();
-        let dir = std::env::temp_dir().join(format!("donna-trust-{}-{}", std::process::id(), rand_suffix()));
+        let dir = std::env::temp_dir().join(format!(
+            "donna-trust-{}-{}",
+            std::process::id(),
+            crate::db::unique_test_suffix()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         Db::open(&dir.join("t.sqlite")).unwrap()
-    }
-
-    fn rand_suffix() -> u64 {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64
     }
 
     #[test]

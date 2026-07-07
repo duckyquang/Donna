@@ -1760,15 +1760,10 @@ mod tests {
         let dir = std::env::temp_dir().join(format!(
             "donna-ops-approvals-{}-{}",
             std::process::id(),
-            rand_suffix()
+            crate::db::unique_test_suffix()
         ));
         std::fs::create_dir_all(&dir).unwrap();
         Db::open(&dir.join("t.sqlite")).unwrap()
-    }
-
-    fn rand_suffix() -> u64 {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64
     }
 
     #[tokio::test]

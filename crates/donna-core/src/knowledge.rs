@@ -852,17 +852,12 @@ pub(crate) mod tests {
         let dir = std::env::temp_dir().join(format!(
             "donna-kb-{}-{}",
             std::process::id(),
-            rand_suffix()
+            crate::db::unique_test_suffix()
         ));
         std::fs::create_dir_all(&dir).unwrap();
         std::env::set_var("DONNA_KB_DIR", &dir);
         ensure_root().unwrap();
         TempKb(guard, dir)
-    }
-
-    pub(crate) fn rand_suffix() -> u64 {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64
     }
 
     #[test]

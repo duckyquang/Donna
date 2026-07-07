@@ -1337,6 +1337,18 @@ fn now_iso() -> String {
     chrono::Utc::now().to_rfc3339()
 }
 
+/// Collision-proof suffix for test temp-dir names. Mixes a nanosecond timestamp with a
+/// process-wide monotonic counter so parallel `cargo test` threads never collide, even on
+/// coarse-resolution clocks where two threads can land on the same nanosecond tick.
+#[cfg(test)]
+pub(crate) fn unique_test_suffix() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let n = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64;
+    n.wrapping_mul(1_000).wrapping_add(COUNTER.fetch_add(1, Ordering::Relaxed))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

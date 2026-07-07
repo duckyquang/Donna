@@ -249,6 +249,13 @@ async fn recently_ended_meetings(within_minutes: i32) -> Result<Vec<google::Cale
     google::list_events(&start.to_rfc3339(), &now.to_rfc3339()).await
 }
 
+/// True when the model decided there's nothing worth surfacing: empty/whitespace-only
+/// content, or a `[SILENT]` sentinel (case-insensitive) at the start.
+fn is_silent(content: &str) -> bool {
+    let trimmed = content.trim();
+    trimmed.is_empty() || trimmed.to_ascii_uppercase().starts_with("[SILENT]")
+}
+
 async fn execute_routine(db: &Db, notifier: &Arc<dyn Notifier>, item: &DueRoutine) -> Result<()> {
     let provider = db
         .get_setting("provider")?
@@ -285,7 +292,9 @@ async fn execute_routine(db: &Db, notifier: &Arc<dyn Notifier>, item: &DueRoutin
             role: "system".into(),
             content: "You are Donna, a proactive personal assistant. Write a helpful, \
                       concise document for the user based on the routine and context. \
-                      Use Markdown headings and bullet points."
+                      Use Markdown headings and bullet points. If, after reviewing the \
+                      context, there is nothing new or worth surfacing to the user right \
+                      now, reply with exactly [SILENT] and nothing else."
                 .into(),
         },
         ChatTurn {
@@ -298,7 +307,13 @@ async fn execute_routine(db: &Db, notifier: &Arc<dyn Notifier>, item: &DueRoutin
     ];
 
     let content = providers::complete(&provider, &model, api_key, &ollama_host, &turns).await?;
-    if content.trim().is_empty() {
+    if is_silent(&content) {
+        // Nothing worth surfacing — still mark the run (and dedupe key, if any) so this
+        // routine doesn't re-fire every 60s tick, exactly like the emit path below.
+        db.mark_routine_run(item.routine.id)?;
+        if let Some(ref key) = item.dedupe_key {
+            db.record_routine_dedupe(item.routine.id, key)?;
+        }
         return Ok(());
     }
 
@@ -498,5 +513,14 @@ mod tests {
         // Later tick still inside the 08:00 minute → already handled, not due again.
         let now = Utc.with_ymd_and_hms(2026, 7, 7, 8, 0, 45).unwrap();
         assert!(!is_due(&routine, &now));
+    }
+
+    #[test]
+    fn is_silent_detects_sentinel_and_empty() {
+        assert!(is_silent(""));
+        assert!(is_silent("   \n "));
+        assert!(is_silent("[SILENT]"));
+        assert!(is_silent("[silent] nothing to report"));
+        assert!(!is_silent("Here is your morning briefing..."));
     }
 }

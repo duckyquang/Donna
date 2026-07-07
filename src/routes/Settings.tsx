@@ -23,6 +23,20 @@ function toolLabel(actionKind: string): string {
   );
 }
 
+const TTS_VOICES = [
+  "nova",
+  "shimmer",
+  "coral",
+  "sage",
+  "ballad",
+  "alloy",
+  "echo",
+  "fable",
+  "onyx",
+  "ash",
+  "verse",
+];
+
 const AUTONOMY_OPTIONS: { value: AutonomyLevel; label: string; desc: string }[] = [
   {
     value: "confirm",
@@ -49,6 +63,8 @@ export default function Settings() {
   const [ollamaHost, setOllamaHost] = useState("http://localhost:11434");
   const [embedModel, setEmbedModel] = useState("nomic-embed-text");
   const [reviewModel, setReviewModel] = useState("");
+  const [ttsVoice, setTtsVoice] = useState("nova");
+  const [speakReplies, setSpeakReplies] = useState(false);
   const [autonomyLevel, setAutonomyLevel] = useState<AutonomyLevel>("confirm");
   const [apiKey, setApiKey] = useState("");
   const [hasKey, setHasKey] = useState(false);
@@ -122,6 +138,8 @@ export default function Settings() {
       setOllamaHost(config.ollamaHost);
       setEmbedModel(config.embedModel ?? "nomic-embed-text");
       setReviewModel(config.reviewModel ?? "");
+      setTtsVoice(config.ttsVoice || "nova");
+      setSpeakReplies(config.speakReplies ?? false);
       setAutonomyLevel(config.autonomyLevel ?? "confirm");
     }
   }, [config]);
@@ -154,6 +172,8 @@ export default function Settings() {
           ollamaHost,
           embedModel,
           reviewModel,
+          ttsVoice,
+          speakReplies,
           onboarded: true,
           profileOnboarded: config?.profileOnboarded ?? false,
           autonomyLevel,
@@ -184,6 +204,8 @@ export default function Settings() {
         ollamaHost,
         embedModel,
         reviewModel,
+        ttsVoice,
+        speakReplies,
         onboarded: true,
         profileOnboarded: config?.profileOnboarded ?? false,
         autonomyLevel,
@@ -429,6 +451,41 @@ export default function Settings() {
               )}
             </div>
           )}
+        </section>
+
+        <section className="space-y-3 rounded-xl border border-white/10 bg-donna-surface p-4">
+          <div>
+            <h2 className="text-sm font-medium text-gray-300">Voice</h2>
+            <p className="text-xs text-gray-500">Voice needs an OpenAI API key set.</p>
+          </div>
+          <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-white/10 p-3">
+            <div>
+              <div className="text-sm font-medium text-white">Speak replies aloud</div>
+              <div className="text-xs text-gray-400">
+                Play Donna's reply as speech after it finishes streaming.
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              checked={speakReplies}
+              onChange={(e) => setSpeakReplies(e.target.checked)}
+              className="h-4 w-4 accent-donna-accent"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm text-gray-300">Voice</span>
+            <select
+              value={ttsVoice}
+              onChange={(e) => setTtsVoice(e.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-donna-bg px-3 py-2 text-sm text-white outline-none focus:border-donna-accent"
+            >
+              {TTS_VOICES.map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </select>
+          </label>
         </section>
 
         {status && (

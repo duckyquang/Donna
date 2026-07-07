@@ -103,6 +103,23 @@ on arrive as WhatsApp Approve/Reject buttons instead of plain text.
 
 ---
 
+## Voice
+
+Donna can listen and talk back:
+
+- **Desktop app:** click the mic button in the chat composer to record a push-to-talk
+  clip; it's transcribed and sent as your message. macOS will prompt for microphone
+  permission the first time you record (only appears in a built/signed app or `tauri
+  dev`, not a plain browser preview). Turn on "Speak replies aloud" in Settings → Voice
+  to have her spoken reply play back after each response, and pick a voice from the
+  same card.
+- **WhatsApp:** voice notes work automatically once WhatsApp is set up (see above) —
+  send one and Donna transcribes it, replies through the normal agent loop, and sends
+  a synthesized voice note back (falling back to text if synthesis fails).
+- **Requirements:** both paths need an OpenAI API key set (Settings → Provider, or
+  the desktop app's key manager) — `/voice/transcribe` and `/voice/speak` return a
+  clear 400 error without one, they never crash.
+
 ## Migrating from a desktop-only install
 
 If you've been running Donna as a desktop-only app and want to move its data onto the
@@ -151,7 +168,6 @@ Data defaults to `./donna-data` when `DONNA_DATA_DIR` isn't set.
 ## What's NOT here yet
 
 This is Phase 1 (foundation) of the [server-first design](../docs/superpowers/specs/2026-07-07-donna-jarvis-design.md).
-Phases 2 (agent loop / tool registry / trust engine) and 3 (two-way WhatsApp text +
-approval buttons) are done — see above. Not built yet: USER.md/MEMORY.md + FTS5 +
-suggestion queue (Phase 4), voice (Phase 5), skills (Phase 6). WhatsApp voice notes
-are part of Phase 5, not Phase 3.
+Phases 2 (agent loop / tool registry / trust engine), 3 (two-way WhatsApp text +
+approval buttons), 4 (memory/FTS5/suggestion queue), and 5 (voice) are done — see
+above. Not built yet: skills (Phase 6).

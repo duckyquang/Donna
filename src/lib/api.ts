@@ -38,6 +38,10 @@ export interface AppConfig {
   embedModel: string;
   /** Model the nightly background review uses; empty means "use `model`". */
   reviewModel: string;
+  /** TTS voice for spoken replies; empty/invalid falls back to the server default ("nova"). */
+  ttsVoice: string;
+  /** Speak assistant replies aloud after they finish streaming. */
+  speakReplies: boolean;
 }
 
 export interface Routine {
@@ -329,6 +333,8 @@ interface RawConfig {
   autonomy_level?: AutonomyLevel;
   embed_model?: string;
   review_model?: string;
+  tts_voice?: string;
+  speak_replies?: boolean;
 }
 
 interface RawRoutine {
@@ -544,6 +550,8 @@ export const api = {
       autonomyLevel: c.autonomy_level ?? "confirm",
       embedModel: c.embed_model ?? "nomic-embed-text",
       reviewModel: c.review_model ?? "",
+      ttsVoice: c.tts_voice ?? "",
+      speakReplies: c.speak_replies ?? false,
     };
   },
 
@@ -558,6 +566,8 @@ export const api = {
         autonomy_level: config.autonomyLevel,
         embed_model: config.embedModel,
         review_model: config.reviewModel,
+        tts_voice: config.ttsVoice,
+        speak_replies: config.speakReplies,
       },
     });
   },

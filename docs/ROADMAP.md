@@ -101,6 +101,14 @@ Phase 4 (Growth) of the spec — done:
 - [x] `[SILENT]` sentinel for routines — a scheduled check that finds nothing produces
       no doc/notification and doesn't re-fire every tick
 
-Not yet built (Phases 5–6 of the spec):
-- [ ] Voice: desktop push-to-talk mode, then WhatsApp voice notes
+Phase 5 (Voice) of the spec — done:
+- [x] `/voice/transcribe` (Whisper) and `/voice/speak` (TTS) endpoints, bearer-auth,
+      400 without an OpenAI key
+- [x] WhatsApp voice notes: inbound audio transcribed, run through the agent loop,
+      replied with a synthesized voice note (text fallback on any failure)
+- [x] Desktop push-to-talk: mic button in Chat records → transcribes → sends via the
+      normal streamed-reply path; "Speak replies aloud" toggle + voice picker in
+      Settings; macOS mic entitlement (`NSMicrophoneUsageDescription`)
+
+Not yet built (Phase 6 of the spec):
 - [ ] Skills system (`skills_list` / `skill_view` / `skill_create` via suggestions)

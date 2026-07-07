@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, Plus, Send, Trash2, X } from "lucide-react";
+import { Check, Mic, Plus, Send, Square, Trash2, X } from "lucide-react";
 import { api, type Approval, type Conversation, type Message } from "../lib/api";
 import { useConfig } from "../lib/useConfig";
 import { Button, Spinner, ThinkingDots } from "../components/ui";
 import { DonnaMessage } from "../components/DonnaMessage";
 import { hasDonnaQuestions } from "../lib/donnaQuestions";
+import * as voice from "../lib/voice";
 import ProfileOnboarding from "./ProfileOnboarding";
 
 const PLACEHOLDER_TITLE = "New conversation";
@@ -27,6 +28,9 @@ export default function Chat() {
   const [needsProfile, setNeedsProfile] = useState<boolean | null>(null);
   const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<Approval[]>([]);
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const recordingRef = useRef<voice.Recording | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const refreshConversations = async () => {
@@ -35,8 +39,10 @@ export default function Chat() {
     return list;
   };
 
-  const loadMessages = async (id: number) => {
-    setMessages(await api.getMessages(id));
+  const loadMessages = async (id: number): Promise<Message[]> => {
+    const rows = await api.getMessages(id);
+    setMessages(rows);
+    return rows;
   };
 
   const loadPendingApprovals = async (id: number) => {
@@ -134,10 +140,14 @@ export default function Chat() {
             loadPendingApprovals(convId);
           }
         });
-        await loadMessages(convId);
+        const finalMessages = await loadMessages(convId);
         await refreshConversations();
         await loadPendingApprovals(convId);
         api.kgExtract(convId).catch(() => {});
+        if (config?.speakReplies) {
+          const last = finalMessages[finalMessages.length - 1];
+          if (last?.role === "assistant") voice.speak(last.content);
+        }
       } catch (e) {
         setError(String(e));
       } finally {
@@ -146,7 +156,7 @@ export default function Chat() {
         setToolEvents([]);
       }
     },
-    [activeId, streaming]
+    [activeId, streaming, config?.speakReplies]
   );
 
   const handleSend = () => {
@@ -158,6 +168,34 @@ export default function Chat() {
 
   const handleQuestionAnswer = (answer: string) => {
     sendMessage(answer);
+  };
+
+  const handleMicClick = async () => {
+    if (recording) {
+      setRecording(false);
+      const rec = recordingRef.current;
+      recordingRef.current = null;
+      if (!rec) return;
+      setTranscribing(true);
+      try {
+        const blob = await rec.stop();
+        const transcript = await voice.transcribeBlob(blob);
+        if (transcript.trim()) sendMessage(transcript);
+      } catch (e) {
+        setError(String(e));
+      } finally {
+        setTranscribing(false);
+      }
+      return;
+    }
+
+    setError(null);
+    try {
+      recordingRef.current = await voice.recordAudio();
+      setRecording(true);
+    } catch (e) {
+      setError(String(e));
+    }
   };
 
   const handleProfileComplete = async (conversationId: number) => {
@@ -298,6 +336,18 @@ export default function Chat() {
               placeholder="Message Donna…"
               className="max-h-40 flex-1 resize-none rounded-xl border border-white/10 bg-donna-bg px-4 py-3 text-sm text-white outline-none focus:border-donna-accent"
             />
+            <button
+              onClick={handleMicClick}
+              disabled={transcribing}
+              title={recording ? "Stop recording" : "Record a voice message"}
+              className={`flex h-11 w-11 items-center justify-center rounded-xl border transition-colors disabled:opacity-40 ${
+                recording
+                  ? "animate-pulse border-red-500 bg-red-500/20 text-red-400"
+                  : "border-white/10 text-gray-300 hover:bg-white/10"
+              }`}
+            >
+              {transcribing ? <Spinner /> : recording ? <Square size={16} /> : <Mic size={18} />}
+            </button>
             <button
               onClick={handleSend}
               disabled={streaming || !input.trim()}

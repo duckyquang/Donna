@@ -144,6 +144,13 @@ pub struct AppConfig {
     /// Model the nightly background review uses; empty means "use `model`" (see `review_model()`).
     #[serde(default)]
     pub review_model: String,
+    /// TTS voice for spoken replies (see `tts_voice_setting()`); empty/invalid falls back to
+    /// `audio::DEFAULT_TTS_VOICE`.
+    #[serde(default)]
+    pub tts_voice: String,
+    /// Whether the desktop chat should speak assistant replies aloud after they stream in.
+    #[serde(default)]
+    pub speak_replies: bool,
 }
 
 fn default_embed_model() -> String {
@@ -170,6 +177,8 @@ pub fn load_config(db: &Db) -> Result<AppConfig> {
             .get_setting("embed_model")?
             .unwrap_or_else(|| embeddings::DEFAULT_EMBED_MODEL.into()),
         review_model: db.get_setting("review_model")?.unwrap_or_default(),
+        tts_voice: db.get_setting("tts_voice")?.unwrap_or_default(),
+        speak_replies: db.get_setting("speak_replies")?.as_deref() == Some("true"),
     })
 }
 
@@ -218,6 +227,11 @@ pub fn save_config(db: &Db, config: AppConfig) -> Result<()> {
     db.set_setting("autonomy_level", &config.autonomy_level)?;
     db.set_setting("embed_model", &config.embed_model)?;
     db.set_setting("review_model", &config.review_model)?;
+    db.set_setting("tts_voice", &config.tts_voice)?;
+    db.set_setting(
+        "speak_replies",
+        if config.speak_replies { "true" } else { "false" },
+    )?;
     if config.provider == "ollama" {
         spawn_ollama_warmup(config.ollama_host, config.model);
     }

@@ -201,6 +201,11 @@ async fn dispatch(st: &AppState, cmd: &str, a: &Value) -> Result<Value, String> 
         "habit_log" => ok!(ops::habit_log(db, arg(&a, "habit_id")?, arg(&a, "note")?).await),
         "habit_logged_today" => ok!(ops::habit_logged_today(db, arg(&a, "habit_id")?).await),
 
+        // --- Events & suggestions ---
+        "recent_events" => ok!(ops::recent_events(db, arg(&a, "limit")?)),
+        "suggestions_list" => ok!(ops::suggestions_list(db, arg(&a, "pendingOnly")?)),
+        "suggestion_respond" => ok!(ops::suggestion_respond(db, arg(&a, "id")?, arg(&a, "accept")?).await),
+
         _ => return Err(UNKNOWN.to_string()),
     };
     out

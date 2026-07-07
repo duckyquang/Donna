@@ -83,6 +83,31 @@ async fn rpc_trust_policies_roundtrip() {
 }
 
 #[tokio::test]
+async fn rpc_suggestions_and_events_roundtrip() {
+    let app = donna_server::build_app(donna_server::test_state());
+
+    // recent_events: read-only, starts empty.
+    let res = app.clone().oneshot(Request::post("/rpc/recent_events")
+        .header("authorization", "Bearer test-token")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"limit":10}"#)).unwrap()).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(res.into_body()).await.unwrap().to_bytes();
+    let events: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(events.as_array().map(|a| a.len()), Some(0));
+
+    // suggestions_list: pendingOnly arm smoke test.
+    let res = app.oneshot(Request::post("/rpc/suggestions_list")
+        .header("authorization", "Bearer test-token")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"pendingOnly":true}"#)).unwrap()).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(res.into_body()).await.unwrap().to_bytes();
+    let suggestions: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(suggestions.as_array().map(|a| a.len()), Some(0));
+}
+
+#[tokio::test]
 async fn ws_token_query_rejects_prefix_and_wrong_param_name() {
     let app = donna_server::build_app(donna_server::test_state());
 

@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::db::{Approval, Conversation, Db, Doc, Message, Notification, Routine, TrustPolicy};
+use crate::db::{Approval, Conversation, Db, Doc, Event, Message, Notification, Routine, Suggestion, TrustPolicy};
 use crate::embeddings;
 use crate::error::{Error, Result};
 use crate::integrations::{self, discord, github, google, linear, notion, slack, telegram, whatsapp};
@@ -384,6 +384,8 @@ pub async fn send_chat(
     conversation_id: i64,
     on_event: &(dyn Fn(ChatEvent) + Send + Sync),
 ) -> Result<()> {
+    let _ = db.insert_event("user_request", Some(conversation_id), None, None);
+
     let config = load_config(db)?;
     if config.model.is_empty() {
         on_event(ChatEvent::Error {
@@ -965,6 +967,13 @@ pub async fn approval_respond(db: &Db, id: i64, approve: bool) -> Result<String>
     let a = db
         .get_approval(id)?
         .ok_or_else(|| Error::Provider(format!("approval {id} not found")))?;
+
+    let _ = db.insert_event(
+        "approval",
+        Some(a.conversation_id),
+        Some(&a.tool),
+        Some(&serde_json::json!({"approved": approve}).to_string()),
+    );
 
     if a.status != "pending" {
         return Ok("already resolved".into());
@@ -1661,6 +1670,43 @@ fn strip_html_text(html: &str) -> String {
         .join(" ")
 }
 
+// --- Events & suggestions -----------------------------------------------------
+
+pub fn recent_events(db: &Db, limit: i64) -> Result<Vec<Event>> {
+    db.recent_events(limit)
+}
+
+pub fn suggestions_list(db: &Db, pending_only: bool) -> Result<Vec<Suggestion>> {
+    db.list_suggestions(pending_only)
+}
+
+/// Resolve a suggestion. Dismiss just marks it dismissed; accept marks it accepted and,
+/// for kind `"routine"`, acts on it by creating the routine from its `payload_json`
+/// (a `CreateRoutineInput`). Other kinds are marked accepted only — acting on them is
+/// manual/another phase's job. Idempotent via `resolve_suggestion`'s pending-only guard:
+/// an already-resolved suggestion is simply re-marked (no-op) rather than double-acted.
+pub async fn suggestion_respond(db: &Db, id: i64, accept: bool) -> Result<String> {
+    let s = db
+        .get_suggestion(id)?
+        .ok_or_else(|| Error::Provider(format!("suggestion {id} not found")))?;
+
+    if !accept {
+        db.resolve_suggestion(id, "dismissed")?;
+        db.insert_notification("Suggestion dismissed", &s.title, None, None)?;
+        return Ok("dismissed".into());
+    }
+
+    db.resolve_suggestion(id, "accepted")?;
+    if s.status == "pending" && s.kind == "routine" {
+        if let Some(payload) = &s.payload_json {
+            let input: CreateRoutineInput = serde_json::from_str(payload)?;
+            create_routine(db, input)?;
+        }
+    }
+    db.insert_notification("Suggestion accepted", &s.title, None, None)?;
+    Ok("accepted".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1844,5 +1890,25 @@ mod tests {
         let result = whatsapp_handle_button(&db, &format!("approve:{}", a.id)).await;
         assert!(result.is_ok());
         assert_eq!(db.get_approval(a.id).unwrap().unwrap().status, "pending");
+    }
+
+    #[tokio::test]
+    async fn suggestion_accept_routine_creates_it() {
+        let db = test_db();
+        let payload = serde_json::json!({"name":"Standup prep","schedule_type":"daily","hour":9,"minute":0,"prompt":"..."}).to_string();
+        let id = db.insert_suggestion("routine","Standup prep","daily 9am",Some(&payload),"routine:standup").unwrap().unwrap();
+        let out = suggestion_respond(&db, id, true).await.unwrap();
+        assert_eq!(out, "accepted");
+        assert!(db.list_routines().unwrap().iter().any(|r| r.name == "Standup prep"));
+    }
+
+    #[tokio::test]
+    async fn suggestion_dismiss_marks_dismissed_and_notifies() {
+        let db = test_db();
+        let id = db.insert_suggestion("routine","Standup prep","daily 9am",None,"routine:standup2").unwrap().unwrap();
+        let out = suggestion_respond(&db, id, false).await.unwrap();
+        assert_eq!(out, "dismissed");
+        assert_eq!(db.get_suggestion(id).unwrap().unwrap().status, "dismissed");
+        assert!(db.list_notifications().unwrap().iter().any(|n| n.title == "Suggestion dismissed"));
     }
 }

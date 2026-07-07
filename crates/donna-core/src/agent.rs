@@ -224,7 +224,9 @@ async fn handle_tool_call(
                 label: label.clone(),
                 status: "running".into(),
             });
-            match tools::execute(db, &call.name, &args).await {
+            let result = tools::execute(db, &call.name, &args).await;
+            let _ = db.insert_event("tool_call", Some(conversation_id), Some(&call.name), None);
+            match result {
                 Ok(result) => {
                     on_event(ChatEvent::Tool {
                         name: call.name.clone(),

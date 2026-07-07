@@ -5,7 +5,7 @@
 
 use std::sync::Mutex;
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
@@ -130,6 +130,29 @@ pub struct Reminder {
     pub due_at: String,
     pub fired: bool,
     pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Event {
+    pub id: i64,
+    pub kind: String,
+    pub conversation_id: Option<i64>,
+    pub tool: Option<String>,
+    pub payload_json: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Suggestion {
+    pub id: i64,
+    pub kind: String,
+    pub title: String,
+    pub body: String,
+    pub payload_json: Option<String>,
+    pub dedup_key: String,
+    pub status: String,
+    pub created_at: String,
+    pub resolved_at: Option<String>,
 }
 
 impl Db {
@@ -1029,6 +1052,124 @@ impl Db {
         )?;
         Ok(changed == 1)
     }
+
+    // --- Events ----------------------------------------------------------------
+
+    pub fn insert_event(
+        &self,
+        kind: &str,
+        conversation_id: Option<i64>,
+        tool: Option<&str>,
+        payload_json: Option<&str>,
+    ) -> Result<i64> {
+        let conn = self.0.lock().unwrap();
+        conn.execute(
+            "INSERT INTO events (kind, conversation_id, tool, payload_json, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![kind, conversation_id, tool, payload_json, now_iso()],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn recent_events(&self, limit: i64) -> Result<Vec<Event>> {
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, kind, conversation_id, tool, payload_json, created_at
+             FROM events ORDER BY id DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map([limit], |row| {
+            Ok(Event {
+                id: row.get(0)?,
+                kind: row.get(1)?,
+                conversation_id: row.get(2)?,
+                tool: row.get(3)?,
+                payload_json: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    // --- Suggestions -------------------------------------------------------------
+
+    /// Insert a new suggestion unless a row (pending OR resolved) with the same
+    /// `dedup_key` already exists — a dismissed/accepted suggestion is never re-filed.
+    /// Returns `None` when skipped.
+    pub fn insert_suggestion(
+        &self,
+        kind: &str,
+        title: &str,
+        body: &str,
+        payload_json: Option<&str>,
+        dedup_key: &str,
+    ) -> Result<Option<i64>> {
+        let conn = self.0.lock().unwrap();
+        let exists: bool = conn.query_row(
+            "SELECT 1 FROM suggestions WHERE dedup_key = ?1",
+            [dedup_key],
+            |_| Ok(true),
+        ).optional()?.unwrap_or(false);
+        if exists {
+            return Ok(None);
+        }
+        conn.execute(
+            "INSERT INTO suggestions (kind, title, body, payload_json, dedup_key, status, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6)",
+            rusqlite::params![kind, title, body, payload_json, dedup_key, now_iso()],
+        )?;
+        Ok(Some(conn.last_insert_rowid()))
+    }
+
+    fn row_to_suggestion(row: &rusqlite::Row) -> rusqlite::Result<Suggestion> {
+        Ok(Suggestion {
+            id: row.get(0)?,
+            kind: row.get(1)?,
+            title: row.get(2)?,
+            body: row.get(3)?,
+            payload_json: row.get(4)?,
+            dedup_key: row.get(5)?,
+            status: row.get(6)?,
+            created_at: row.get(7)?,
+            resolved_at: row.get(8)?,
+        })
+    }
+
+    pub fn list_suggestions(&self, pending_only: bool) -> Result<Vec<Suggestion>> {
+        let conn = self.0.lock().unwrap();
+        let sql = if pending_only {
+            "SELECT id, kind, title, body, payload_json, dedup_key, status, created_at, resolved_at
+             FROM suggestions WHERE status = 'pending' ORDER BY id DESC"
+        } else {
+            "SELECT id, kind, title, body, payload_json, dedup_key, status, created_at, resolved_at
+             FROM suggestions ORDER BY id DESC"
+        };
+        let mut stmt = conn.prepare(sql)?;
+        let rows = stmt.query_map([], Self::row_to_suggestion)?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn get_suggestion(&self, id: i64) -> Result<Option<Suggestion>> {
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, kind, title, body, payload_json, dedup_key, status, created_at, resolved_at
+             FROM suggestions WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query([id])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(Self::row_to_suggestion(&row)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn resolve_suggestion(&self, id: i64, status: &str) -> Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute(
+            "UPDATE suggestions SET status = ?1, resolved_at = ?2 WHERE id = ?3 AND status = 'pending'",
+            rusqlite::params![status, now_iso(), id],
+        )?;
+        Ok(())
+    }
 }
 
 fn migrate(conn: &Connection) -> Result<()> {
@@ -1167,6 +1308,26 @@ fn migrate(conn: &Connection) -> Result<()> {
         CREATE TABLE IF NOT EXISTS webhook_events (
             id          TEXT PRIMARY KEY,
             created_at  TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS events (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind            TEXT NOT NULL,
+            conversation_id INTEGER,
+            tool            TEXT,
+            payload_json    TEXT,
+            created_at      TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);
+        CREATE TABLE IF NOT EXISTS suggestions (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind            TEXT NOT NULL,
+            title           TEXT NOT NULL,
+            body            TEXT NOT NULL,
+            payload_json    TEXT,
+            dedup_key       TEXT NOT NULL,
+            status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','accepted','dismissed')),
+            created_at      TEXT NOT NULL,
+            resolved_at     TEXT
         );",
     )?;
     Ok(())
@@ -1292,5 +1453,26 @@ mod tests {
         let db = test_db();
         assert_eq!(db.get_setting("fts_backfilled").unwrap().as_deref(), Some("1")); // open() ran it
         db.ensure_fts_backfill().unwrap(); // idempotent second call
+    }
+
+    #[test]
+    fn suggestion_dedup_latches() {
+        let db = test_db();
+        let a = db.insert_suggestion("routine","Daily standup prep","...",None,"routine:standup").unwrap();
+        assert!(a.is_some());
+        assert!(db.insert_suggestion("routine","dup","...",None,"routine:standup").unwrap().is_none()); // pending dup
+        db.resolve_suggestion(a.unwrap(), "dismissed").unwrap();
+        assert!(db.insert_suggestion("routine","again","...",None,"routine:standup").unwrap().is_none()); // dismissed → never again
+        assert!(db.list_suggestions(false).unwrap().len() == 1);
+    }
+
+    #[test]
+    fn events_recorded_and_listed() {
+        let db = test_db();
+        db.insert_event("user_request", Some(1), None, None).unwrap();
+        db.insert_event("tool_call", Some(1), Some("kb_search"), None).unwrap();
+        let ev = db.recent_events(10).unwrap();
+        assert_eq!(ev.len(), 2);
+        assert_eq!(ev[0].kind, "tool_call"); // newest first
     }
 }

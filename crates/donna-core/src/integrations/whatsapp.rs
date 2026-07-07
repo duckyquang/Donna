@@ -3,6 +3,7 @@
 //! Requires a Meta Business app with WhatsApp Cloud API enabled. Donna stores the
 //! permanent access token and phone number id in the keychain.
 
+use reqwest::multipart::{Form, Part};
 use serde::Serialize;
 
 use crate::error::{Error, Result};
@@ -110,6 +111,79 @@ pub async fn send_approval_buttons(to: &str, approval_id: i64, summary: &str) ->
     Ok(())
 }
 
+/// Download inbound media by id: resolve the CDN url via the Graph API, then fetch
+/// the bytes from that url. Both requests need the bearer token — Meta's media CDN
+/// checks it too, not just the Graph lookup.
+pub async fn download_media(media_id: &str) -> Result<Vec<u8>> {
+    let url = format!("https://graph.facebook.com/v19.0/{media_id}");
+    let resp = reqwest::Client::new().get(url).bearer_auth(access_token()?).send().await?;
+    if !resp.status().is_success() {
+        let detail = resp.text().await.unwrap_or_default();
+        return Err(Error::Provider(format!("WhatsApp API error: {detail}")));
+    }
+    let meta: serde_json::Value = resp.json().await?;
+    let media_url = meta["url"]
+        .as_str()
+        .ok_or_else(|| Error::Provider("WhatsApp media lookup missing url".into()))?;
+
+    let resp = reqwest::Client::new().get(media_url).bearer_auth(access_token()?).send().await?;
+    if !resp.status().is_success() {
+        let detail = resp.text().await.unwrap_or_default();
+        return Err(Error::Provider(format!("WhatsApp API error: {detail}")));
+    }
+    Ok(resp.bytes().await?.to_vec())
+}
+
+/// Upload media bytes to WhatsApp, returning the resulting media id.
+pub async fn upload_media(bytes: Vec<u8>, mime: &str) -> Result<String> {
+    let phone_id = phone_number_id()?;
+    let url = format!("https://graph.facebook.com/v19.0/{phone_id}/media");
+    let form = Form::new()
+        .text("messaging_product", "whatsapp")
+        .text("type", mime.to_string())
+        .part("file", Part::bytes(bytes).file_name("donna.ogg").mime_str(mime)?);
+    let resp = reqwest::Client::new()
+        .post(url)
+        .bearer_auth(access_token()?)
+        .multipart(form)
+        .send()
+        .await?;
+    if !resp.status().is_success() {
+        let detail = resp.text().await.unwrap_or_default();
+        return Err(Error::Provider(format!("WhatsApp API error: {detail}")));
+    }
+    let body: serde_json::Value = resp.json().await?;
+    body["id"]
+        .as_str()
+        .map(str::to_string)
+        .ok_or_else(|| Error::Provider("WhatsApp media upload missing id".into()))
+}
+
+/// Build the outbound voice-note message body. Pure so it's unit-testable without a
+/// network call.
+fn voice_note_body(to_digits: &str, media_id: &str) -> serde_json::Value {
+    serde_json::json!({
+        "messaging_product": "whatsapp",
+        "to": to_digits,
+        "type": "audio",
+        "audio": { "id": media_id }
+    })
+}
+
+/// Upload `audio` as a voice note and send it to `to`.
+pub async fn send_voice_note(to: &str, audio: Vec<u8>) -> Result<()> {
+    let media_id = upload_media(audio, "audio/ogg").await?;
+    let phone_id = phone_number_id()?;
+    let url = format!("https://graph.facebook.com/v19.0/{phone_id}/messages");
+    let body = voice_note_body(to.trim_start_matches('+'), &media_id);
+    let resp = reqwest::Client::new().post(url).bearer_auth(access_token()?).json(&body).send().await?;
+    if !resp.status().is_success() {
+        let detail = resp.text().await.unwrap_or_default();
+        return Err(Error::Provider(format!("WhatsApp API error: {detail}")));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Serialize)]
 pub struct WhatsAppStatus {
     pub connected: bool,
@@ -142,5 +216,13 @@ mod tests {
         let v = approval_buttons_body("15550100", 42, &"🎉".repeat(2000));
         let body_text = v["interactive"]["body"]["text"].as_str().unwrap();
         assert!(body_text.len() <= 1024, "body must be <= 1024 bytes, was {}", body_text.len());
+    }
+
+    #[test]
+    fn voice_note_message_body() {
+        let b = voice_note_body("15550100", "MEDIA123");
+        assert_eq!(b["type"], "audio");
+        assert_eq!(b["audio"]["id"], "MEDIA123");
+        assert_eq!(b["to"], "15550100");
     }
 }

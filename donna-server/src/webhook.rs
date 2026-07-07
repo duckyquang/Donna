@@ -109,6 +109,12 @@ fn dispatch(st: &AppState, allow: Option<&str>, msg: Message) {
                 polite_reply(db);
             }
         }
+        "audio" => match msg.audio.map(|a| a.id) {
+            Some(id) => {
+                tokio::spawn(async move { let _ = ops::whatsapp_handle_audio(&db, &id).await; });
+            }
+            None => polite_reply(db),
+        },
         _ => polite_reply(db),
     }
 }
@@ -178,6 +184,7 @@ struct Message {
     r#type: String,
     text: Option<Text>,
     interactive: Option<Interactive>,
+    audio: Option<Audio>,
 }
 
 #[derive(Deserialize)]
@@ -188,6 +195,11 @@ struct Text {
 #[derive(Deserialize)]
 struct Interactive {
     button_reply: Option<ButtonReply>,
+}
+
+#[derive(Deserialize)]
+struct Audio {
+    id: String,
 }
 
 #[derive(Deserialize)]

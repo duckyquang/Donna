@@ -6,6 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::audio;
 use crate::db::{Approval, Conversation, Db, Doc, Event, Message, Notification, Routine, Suggestion, TrustPolicy};
 use crate::embeddings;
 use crate::error::{Error, Result};
@@ -1260,6 +1261,50 @@ pub async fn whatsapp_handle_text(db: &Db, text: &str) -> Result<()> {
     Ok(())
 }
 
+/// Handle an inbound WhatsApp voice note: transcribe it and run the transcript
+/// through the same text pipeline as `whatsapp_handle_text` (a text reply now;
+/// Task 3 upgrades the reply itself to a voice note). The OpenAI key is checked
+/// FIRST — before touching the network at all — so the no-creds path is
+/// deterministic; every other failure (fetch, transcription) is also swallowed so
+/// a webhook handler never surfaces an `Err`.
+pub async fn whatsapp_handle_audio(db: &Db, media_id: &str) -> Result<()> {
+    let Some(key) = secrets::get_api_key("openai")? else {
+        best_effort_reply(db, "I can't transcribe voice notes without an OpenAI key set.").await;
+        return Ok(());
+    };
+
+    let bytes = match whatsapp::download_media(media_id).await {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("whatsapp_handle_audio: download_media failed: {e}");
+            best_effort_reply(db, "I couldn't fetch that voice note.").await;
+            return Ok(());
+        }
+    };
+
+    let text = match audio::transcribe(&key, audio::DEFAULT_TRANSCRIBE_MODEL, bytes, "note.ogg").await {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("whatsapp_handle_audio: transcribe failed: {e}");
+            best_effort_reply(db, "I couldn't understand that voice note.").await;
+            return Ok(());
+        }
+    };
+
+    whatsapp_handle_text(db, &text).await
+}
+
+/// Best-effort reply to the owner's configured WhatsApp number. Used for the
+/// early-bailout paths in `whatsapp_handle_audio`, where there's no session/brain
+/// turn to piggyback the reply on. Swallows both a missing number and a send failure.
+async fn best_effort_reply(db: &Db, text: &str) {
+    if let Ok(Some(number)) = db.get_setting(WHATSAPP_MY_NUMBER_SETTING) {
+        if let Err(e) = whatsapp::send_message(&number, text).await {
+            eprintln!("whatsapp_handle_audio: send_message failed: {e}");
+        }
+    }
+}
+
 /// Parse a WhatsApp interactive button reply id into `(approve, approval_id)`.
 /// `"approve:42"` -> `Some((true, 42))`, `"reject:7"` -> `Some((false, 7))`, anything
 /// else (unknown prefix, missing colon, non-numeric id) -> `None`. Pure.
@@ -1938,6 +1983,14 @@ mod tests {
         let result = whatsapp_handle_button(&db, &format!("approve:{}", a.id)).await;
         assert!(result.is_ok());
         assert_eq!(db.get_approval(a.id).unwrap().unwrap().status, "pending");
+    }
+
+    #[tokio::test]
+    async fn whatsapp_handle_audio_no_creds_is_ok() {
+        // No OpenAI key configured: the key check runs before any network call
+        // (download included), so this must return Ok without touching the network.
+        let db = test_db();
+        assert!(whatsapp_handle_audio(&db, "nonexistent-media").await.is_ok());
     }
 
     #[tokio::test]

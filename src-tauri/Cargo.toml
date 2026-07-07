@@ -6,7 +6,7 @@ authors = ["Donna contributors"]
 license = "MIT"
 repository = "https://github.com/duckyquang/Donna"
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.86"
 
 [lib]
 name = "donna_lib"

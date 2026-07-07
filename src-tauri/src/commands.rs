@@ -17,6 +17,14 @@ pub use ops::ProjectFile;
 
 // --- Google OAuth (desktop-native loopback flow) -----------------------------
 
+/// Write the OAuth client to the desktop keychain so the native `google_connect` loopback
+/// flow (and `export_google_secrets`) can read it. The frontend also pushes the same
+/// client to the server store via RPC so server-side status checks / API calls see it too.
+#[tauri::command]
+pub fn google_set_client(client_id: String, client_secret: String) -> Result<()> {
+    ops::google_set_client(client_id, client_secret).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn google_connect() -> Result<()> {
     ops::google_connect().await.map_err(|e| e.to_string())

@@ -8,6 +8,7 @@ import { rpc, chatStream } from "./server";
 // The two streaming pairs (send_chat, quick_chat_send) go over WS via chatStream().
 const NATIVE_COMMANDS = new Set([
   "quick_chat_context",
+  "google_set_client",
   "google_connect",
   "export_google_secrets",
   "project_open_in_editor",
@@ -527,11 +528,17 @@ export const api = {
    * Stream an assistant reply for a conversation. Returns a promise that resolves when
    * the stream ends; `onEvent` fires for each token, plus a final done/error event.
    */
-  async sendChat(
+  sendChat(
     conversationId: number,
     onEvent: (event: ChatEvent) => void
   ): Promise<void> {
-    chatStream("send_chat", { conversationId }, (ev) => onEvent(ev as ChatEvent));
+    return new Promise((resolve) => {
+      chatStream("send_chat", { conversationId }, (ev) => {
+        onEvent(ev as ChatEvent);
+        const t = (ev as { type?: string }).type;
+        if (t === "done" || t === "error") resolve();
+      });
+    });
   },
 
   async kgGraph(): Promise<KgGraph> {
@@ -620,8 +627,12 @@ export const api = {
     }));
   },
 
-  googleSetClient(clientId: string, clientSecret: string): Promise<void> {
-    return invoke("google_set_client", { clientId, clientSecret });
+  /** Write the OAuth client to both stores: desktop keychain (native google_connect,
+   * export_google_secrets) and the server FileStore (integrations_status gate,
+   * server-side Google API calls / token refresh). */
+  async googleSetClient(clientId: string, clientSecret: string): Promise<void> {
+    await invoke("google_set_client", { clientId, clientSecret });
+    await rpc("google_set_client", { clientId, clientSecret });
   },
   googleConnect(): Promise<void> {
     return invoke("google_connect");
@@ -904,12 +915,19 @@ export const api = {
 
   // --- Quick Chat (Cmd+D overlay) ---
   quickChatContext: () => invoke<QuickChatCtx>("quick_chat_context"),
-  async quickChatSend(
+  /** Streams a quick-chat reply. Returns a promise that resolves when the stream ends. */
+  quickChatSend(
     message: string,
     appName: string,
     onEvent: (event: ChatEvent) => void
   ): Promise<void> {
-    chatStream("quick_chat_send", { message, appName }, (ev) => onEvent(ev as ChatEvent));
+    return new Promise((resolve) => {
+      chatStream("quick_chat_send", { message, appName }, (ev) => {
+        onEvent(ev as ChatEvent);
+        const t = (ev as { type?: string }).type;
+        if (t === "done" || t === "error") resolve();
+      });
+    });
   },
 
   // --- Migration: export old local data for donna-server import ---

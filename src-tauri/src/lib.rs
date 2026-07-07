@@ -56,6 +56,7 @@ pub fn run() {
         // Native-only commands. Everything else is served by donna-server over RPC/WS.
         .invoke_handler(tauri::generate_handler![
             commands::quick_chat_context,
+            commands::google_set_client,
             commands::google_connect,
             commands::export_google_secrets,
             commands::export_server_bundle,

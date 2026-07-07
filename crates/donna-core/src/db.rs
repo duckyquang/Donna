@@ -286,6 +286,26 @@ impl Db {
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
+    /// Most recent messages across all conversations, newest first — used by the
+    /// nightly background review to spot recurring patterns.
+    pub fn recent_messages(&self, limit: i64) -> Result<Vec<Message>> {
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, conversation_id, role, content, created_at
+             FROM messages ORDER BY id DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map([limit], |row| {
+            Ok(Message {
+                id: row.get(0)?,
+                conversation_id: row.get(1)?,
+                role: row.get(2)?,
+                content: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
     /// Full-text search over all messages via the `messages_fts` FTS5 index, newest-relevance
     /// first. The query is wrapped as a single quoted FTS string so punctuation or FTS
     /// operators (`AND`, `*`, `:`, unbalanced `"`) in user input can never produce a syntax

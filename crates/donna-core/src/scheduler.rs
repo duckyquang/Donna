@@ -57,16 +57,17 @@ async fn tick(db: &Db, notifier: &Arc<dyn Notifier>) -> Result<()> {
     let routines = db.list_routines()?;
     // Prefer the user's configured timezone; fall back to the system-local one
     // when the setting is unset or fails to parse as a `chrono_tz::Tz`.
-    let (due, now_utc_rfc3339) = match configured_tz(db) {
+    // `today` is the tz-aware calendar date (YYYY-MM-DD), used as the nightly-review guard.
+    let (due, now_utc_rfc3339, today) = match configured_tz(db) {
         Some(tz) => {
             let now = Utc::now().with_timezone(&tz);
             let due = collect_due_routines(db, &routines, now).await?;
-            (due, now.with_timezone(&Utc).to_rfc3339())
+            (due, now.with_timezone(&Utc).to_rfc3339(), now.date_naive().to_string())
         }
         None => {
             let now = Local::now();
             let due = collect_due_routines(db, &routines, now).await?;
-            (due, now.with_timezone(&Utc).to_rfc3339())
+            (due, now.with_timezone(&Utc).to_rfc3339(), now.date_naive().to_string())
         }
     };
 
@@ -77,6 +78,7 @@ async fn tick(db: &Db, notifier: &Arc<dyn Notifier>) -> Result<()> {
     }
 
     fire_due_reminders(db, notifier, &now_utc_rfc3339)?;
+    maybe_run_daily_review(db, &today).await;
     Ok(())
 }
 
@@ -89,6 +91,21 @@ fn fire_due_reminders(db: &Db, notifier: &Arc<dyn Notifier>, now_rfc3339: &str) 
         db.mark_reminder_fired(r.id)?;
     }
     Ok(())
+}
+
+/// Run the nightly background review at most once per calendar day. Guarded by the
+/// `last_review_day` setting compared against the tz-aware `today` (YYYY-MM-DD): only runs
+/// when it changes, and the day key is written only after the review returns, so a crash
+/// mid-review just retries on the next tick.
+///
+/// ponytail: nightly is enough; a post-session trigger can be added when sessions are cheap
+/// to detect server-side.
+async fn maybe_run_daily_review(db: &Db, today: &str) {
+    if db.get_setting("last_review_day").ok().flatten().as_deref() == Some(today) {
+        return;
+    }
+    let _ = crate::review::run_background_review(db).await;
+    let _ = db.set_setting("last_review_day", today);
 }
 
 async fn collect_due_routines<Tz: TimeZone>(

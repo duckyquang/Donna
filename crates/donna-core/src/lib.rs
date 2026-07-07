@@ -13,6 +13,7 @@ pub mod oauth;
 pub mod ops;
 pub mod providers;
 pub mod retrieval;
+pub mod review;
 pub mod scheduler;
 pub mod tools;
 pub mod secrets;

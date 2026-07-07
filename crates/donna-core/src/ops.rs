@@ -169,6 +169,17 @@ pub fn get_config(db: &Db) -> Result<AppConfig> {
     load_config(db)
 }
 
+/// Model the nightly background review should use: the `review_model` setting if set to a
+/// non-empty value, else the main chat model. Empty when neither is configured.
+pub fn review_model(db: &Db) -> String {
+    if let Ok(Some(m)) = db.get_setting("review_model") {
+        if !m.trim().is_empty() {
+            return m;
+        }
+    }
+    db.get_setting("model").ok().flatten().unwrap_or_default()
+}
+
 pub fn basics_status() -> Result<Vec<knowledge::BasicFieldStatus>> {
     knowledge::basics_status()
 }

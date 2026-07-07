@@ -253,7 +253,7 @@ pub fn add_message(
 const PLACEHOLDER_TITLE: &str = "New conversation";
 
 /// After the first exchange, replace the placeholder title with one Donna generates.
-async fn maybe_generate_title(
+pub(crate) async fn maybe_generate_title(
     db: &Db,
     conversation_id: i64,
     provider: &str,
@@ -322,6 +322,50 @@ pub enum ChatEvent {
     Token { content: String },
     Done { message_id: i64 },
     Error { message: String },
+    /// A tool call's lifecycle: status is "running" | "done" | "error".
+    Tool { name: String, label: String, status: String },
+    /// An outbound action needs the user's approval, filed out-of-band.
+    Approval { approval_id: i64, summary: String, tool: String },
+}
+
+/// Assemble the chat system prompt for a conversation: retrieval on the last user
+/// message + persona/knowledge/setup + the early-session note. Shared by `send_chat`
+/// and the agent loop so both see an identical prompt.
+pub(crate) async fn assemble_chat_system_prompt(
+    db: &Db,
+    config: &AppConfig,
+    conversation_id: i64,
+) -> Result<String> {
+    let retrieval_query = db
+        .get_messages(conversation_id)?
+        .into_iter()
+        .rev()
+        .find(|m| m.role == "user")
+        .map(|m| m.content);
+    let retrieval_ctx = if let Some(ref query) = retrieval_query {
+        let cfg = retrieval::RetrievalConfig {
+            provider: &config.provider,
+            ollama_host: &config.ollama_host,
+            embed_model: &config.embed_model,
+        };
+        retrieval::search_for_prompt(query, db, &cfg).await?
+    } else {
+        String::new()
+    };
+    let mut system_content = build_system_prompt(config, Some(&retrieval_ctx))?;
+    let user_message_count = db
+        .get_messages(conversation_id)?
+        .iter()
+        .filter(|m| m.role == "user")
+        .count();
+    if user_message_count <= 2 {
+        system_content.push_str(
+            "\n\n## Session note\nThis is an early conversation. Core identity basics \
+             are likely still missing. Prioritize donna-ask questions for name, age, \
+             nationality, and birthday before anything else.",
+        );
+    }
+    Ok(system_content)
 }
 
 /// Generate an assistant reply for a conversation, streaming tokens via `on_event`
@@ -341,36 +385,22 @@ pub async fn send_chat(
 
     let api_key = secrets::get_api_key(&config.provider)?;
 
-    // Build the prompt: persona + basics audit + live knowledge + conversation history.
-    let retrieval_query = db
-        .get_messages(conversation_id)?
-        .into_iter()
-        .rev()
-        .find(|m| m.role == "user")
-        .map(|m| m.content);
-    let retrieval_ctx = if let Some(ref query) = retrieval_query {
-        let cfg = retrieval::RetrievalConfig {
-            provider: &config.provider,
-            ollama_host: &config.ollama_host,
-            embed_model: &config.embed_model,
-        };
-        retrieval::search_for_prompt(query, db, &cfg).await?
-    } else {
-        String::new()
-    };
-    let mut system_content = build_system_prompt(&config, Some(&retrieval_ctx))?;
-    let user_message_count = db
-        .get_messages(conversation_id)?
-        .iter()
-        .filter(|m| m.role == "user")
-        .count();
-    if user_message_count <= 2 {
-        system_content.push_str(
-            "\n\n## Session note\nThis is an early conversation. Core identity basics \
-             are likely still missing. Prioritize donna-ask questions for name, age, \
-             nationality, and birthday before anything else.",
-        );
+    // OpenAI gets the tool-calling agent loop; every other provider stays plain chat.
+    if config.provider == "openai" {
+        if let Some(key) = api_key {
+            return crate::agent::run_agent_turn(
+                db,
+                conversation_id,
+                &key,
+                &config.model,
+                on_event,
+            )
+            .await;
+        }
     }
+
+    // Build the prompt: persona + basics audit + live knowledge + conversation history.
+    let system_content = assemble_chat_system_prompt(db, &config, conversation_id).await?;
 
     let mut turns: Vec<ChatTurn> = vec![ChatTurn {
         role: "system".into(),

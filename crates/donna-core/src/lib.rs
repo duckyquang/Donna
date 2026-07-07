@@ -1,6 +1,7 @@
 //! Donna's portable brain: DB, knowledge base, providers, integrations.
 //! Consumed by the Tauri desktop app and donna-server.
 
+pub mod agent;
 pub mod bundle;
 pub mod db;
 pub mod docs;

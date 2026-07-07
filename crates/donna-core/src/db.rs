@@ -1378,7 +1378,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!(
             "donna-db-test-{}-{}",
             std::process::id(),
-            now_iso().replace([':', '.'], "-")
+            unique_test_suffix()
         ));
         std::fs::create_dir_all(&dir).unwrap();
         Db::open(&dir.join("t.sqlite")).unwrap()

@@ -1683,12 +1683,19 @@ pub fn suggestions_list(db: &Db, pending_only: bool) -> Result<Vec<Suggestion>> 
 /// Resolve a suggestion. Dismiss just marks it dismissed; accept marks it accepted and,
 /// for kind `"routine"`, acts on it by creating the routine from its `payload_json`
 /// (a `CreateRoutineInput`). Other kinds are marked accepted only — acting on them is
-/// manual/another phase's job. Idempotent via `resolve_suggestion`'s pending-only guard:
-/// an already-resolved suggestion is simply re-marked (no-op) rather than double-acted.
+/// manual/another phase's job. Idempotent: a non-pending suggestion returns "already
+/// resolved" without re-acting. For routine suggestions, the payload is parsed BEFORE
+/// `resolve_suggestion` runs, so a missing/malformed payload leaves the suggestion
+/// pending (retryable) with a visible failure notification instead of silently
+/// consuming it.
 pub async fn suggestion_respond(db: &Db, id: i64, accept: bool) -> Result<String> {
     let s = db
         .get_suggestion(id)?
         .ok_or_else(|| Error::Provider(format!("suggestion {id} not found")))?;
+
+    if s.status != "pending" {
+        return Ok("already resolved".into());
+    }
 
     if !accept {
         db.resolve_suggestion(id, "dismissed")?;
@@ -1696,12 +1703,35 @@ pub async fn suggestion_respond(db: &Db, id: i64, accept: bool) -> Result<String
         return Ok("dismissed".into());
     }
 
-    db.resolve_suggestion(id, "accepted")?;
-    if s.status == "pending" && s.kind == "routine" {
-        if let Some(payload) = &s.payload_json {
-            let input: CreateRoutineInput = serde_json::from_str(payload)?;
-            create_routine(db, input)?;
+    let parsed_routine = if s.kind == "routine" {
+        match s.payload_json.as_deref().map(serde_json::from_str::<CreateRoutineInput>) {
+            Some(Ok(input)) => Some(input),
+            Some(Err(e)) => {
+                db.insert_notification(
+                    "Suggestion couldn't be applied",
+                    &format!("{}: invalid routine details", s.title),
+                    None,
+                    None,
+                )?;
+                return Ok(format!("failed: {e}"));
+            }
+            None => {
+                db.insert_notification(
+                    "Suggestion couldn't be applied",
+                    &format!("{}: invalid routine details", s.title),
+                    None,
+                    None,
+                )?;
+                return Ok("failed: missing routine payload".into());
+            }
         }
+    } else {
+        None
+    };
+
+    db.resolve_suggestion(id, "accepted")?;
+    if let Some(input) = parsed_routine {
+        create_routine(db, input)?;
     }
     db.insert_notification("Suggestion accepted", &s.title, None, None)?;
     Ok("accepted".into())
@@ -1910,5 +1940,52 @@ mod tests {
         assert_eq!(out, "dismissed");
         assert_eq!(db.get_suggestion(id).unwrap().unwrap().status, "dismissed");
         assert!(db.list_notifications().unwrap().iter().any(|n| n.title == "Suggestion dismissed"));
+    }
+
+    #[tokio::test]
+    async fn suggestion_accept_malformed_routine_stays_pending() {
+        let db = test_db();
+        let id = db
+            .insert_suggestion(
+                "routine",
+                "Standup prep",
+                "daily 9am",
+                Some("{not valid json"),
+                "routine:standup-bad",
+            )
+            .unwrap()
+            .unwrap();
+        let out = suggestion_respond(&db, id, true).await.unwrap();
+        assert!(out.starts_with("failed:"), "expected failed:.. got {out}");
+        assert_eq!(db.get_suggestion(id).unwrap().unwrap().status, "pending");
+        assert!(!db.list_routines().unwrap().iter().any(|r| r.name == "Standup prep"));
+        assert!(db.list_notifications().unwrap().iter().any(|n| n.title == "Suggestion couldn't be applied"));
+    }
+
+    #[tokio::test]
+    async fn suggestion_accept_missing_routine_payload_stays_pending() {
+        let db = test_db();
+        let id = db
+            .insert_suggestion("routine", "Standup prep", "daily 9am", None, "routine:standup-missing")
+            .unwrap()
+            .unwrap();
+        let out = suggestion_respond(&db, id, true).await.unwrap();
+        assert!(out.starts_with("failed:"), "expected failed:.. got {out}");
+        assert_eq!(db.get_suggestion(id).unwrap().unwrap().status, "pending");
+        assert!(!db.list_routines().unwrap().iter().any(|r| r.name == "Standup prep"));
+        assert!(db.list_notifications().unwrap().iter().any(|n| n.title == "Suggestion couldn't be applied"));
+    }
+
+    #[tokio::test]
+    async fn suggestion_accept_twice_is_idempotent() {
+        let db = test_db();
+        let payload = serde_json::json!({"name":"Standup prep","schedule_type":"daily","hour":9,"minute":0,"prompt":"..."}).to_string();
+        let id = db.insert_suggestion("routine","Standup prep","daily 9am",Some(&payload),"routine:standup-twice").unwrap().unwrap();
+        let first = suggestion_respond(&db, id, true).await.unwrap();
+        assert_eq!(first, "accepted");
+        let second = suggestion_respond(&db, id, true).await.unwrap();
+        assert_eq!(second, "already resolved");
+        let count = db.list_routines().unwrap().iter().filter(|r| r.name == "Standup prep").count();
+        assert_eq!(count, 1);
     }
 }

@@ -57,15 +57,34 @@ async fn tick(db: &Db, notifier: &Arc<dyn Notifier>) -> Result<()> {
     let routines = db.list_routines()?;
     // Prefer the user's configured timezone; fall back to the system-local one
     // when the setting is unset or fails to parse as a `chrono_tz::Tz`.
-    let due = match configured_tz(db) {
-        Some(tz) => collect_due_routines(db, &routines, Utc::now().with_timezone(&tz)).await?,
-        None => collect_due_routines(db, &routines, Local::now()).await?,
+    let (due, now_rfc3339) = match configured_tz(db) {
+        Some(tz) => {
+            let now = Utc::now().with_timezone(&tz);
+            (collect_due_routines(db, &routines, now).await?, now.to_rfc3339())
+        }
+        None => {
+            let now = Local::now();
+            (collect_due_routines(db, &routines, now).await?, now.to_rfc3339())
+        }
     };
 
     for item in due {
         if let Err(e) = execute_routine(db, notifier, &item).await {
             eprintln!("routine {} failed: {e}", item.routine.name);
         }
+    }
+
+    fire_due_reminders(db, notifier, &now_rfc3339)?;
+    Ok(())
+}
+
+/// Fire any reminders whose `due_at` has passed, as a notification, then mark
+/// them fired so the next tick doesn't fire them again.
+fn fire_due_reminders(db: &Db, notifier: &Arc<dyn Notifier>, now_rfc3339: &str) -> Result<()> {
+    for r in db.due_unfired_reminders(now_rfc3339)? {
+        db.insert_notification("Reminder", &r.text, None, None)?;
+        notifier.notify("Reminder", &r.text);
+        db.mark_reminder_fired(r.id)?;
     }
     Ok(())
 }

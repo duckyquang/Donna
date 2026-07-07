@@ -1188,6 +1188,16 @@ pub async fn habit_logged_today(db: &Db, habit_id: i64) -> Result<bool> {
     db.habit_logged_today(habit_id)
 }
 
+// --- Reminders ---------------------------------------------------------------
+
+/// Set a one-shot note-to-self reminder. `due_at` must be RFC3339.
+pub async fn remember(db: &Db, text: String, due_at: String) -> Result<i64> {
+    if chrono::DateTime::parse_from_rfc3339(&due_at).is_err() {
+        return Err(Error::Provider("due_at must be RFC3339, e.g. 2026-01-01T09:00:00Z".into()));
+    }
+    db.insert_reminder(&text, &due_at)
+}
+
 // --- Quick Chat ---------------------------------------------------------------
 
 pub async fn quick_chat_send(

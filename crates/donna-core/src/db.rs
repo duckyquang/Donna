@@ -104,6 +104,34 @@ pub struct Habit {
     pub created_at: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TrustPolicy {
+    pub action_kind: String,
+    pub mode: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Approval {
+    pub id: i64,
+    pub conversation_id: i64,
+    pub tool: String,
+    pub args_json: String,
+    pub summary: String,
+    pub status: String,
+    pub created_at: String,
+    pub resolved_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Reminder {
+    pub id: i64,
+    pub text: String,
+    pub due_at: String,
+    pub fired: bool,
+    pub created_at: String,
+}
+
 impl Db {
     /// Open (or create) the database at `path` and run migrations.
     pub fn open(path: &std::path::Path) -> Result<Self> {
@@ -737,6 +765,179 @@ impl Db {
         )?;
         Ok(count > 0)
     }
+
+    // --- Trust policies ------------------------------------------------------
+
+    pub fn get_trust_policy(&self, action_kind: &str) -> Result<Option<String>> {
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT mode FROM trust_policies WHERE action_kind = ?1")?;
+        let mut rows = stmt.query([action_kind])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(row.get(0)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn set_trust_policy(&self, action_kind: &str, mode: &str) -> Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute(
+            "INSERT INTO trust_policies (action_kind, mode, updated_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(action_kind) DO UPDATE SET mode = excluded.mode, updated_at = excluded.updated_at",
+            rusqlite::params![action_kind, mode, now_iso()],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_trust_policies(&self) -> Result<Vec<TrustPolicy>> {
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT action_kind, mode, updated_at FROM trust_policies ORDER BY action_kind ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(TrustPolicy {
+                action_kind: row.get(0)?,
+                mode: row.get(1)?,
+                updated_at: row.get(2)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    // --- Approvals -------------------------------------------------------------
+
+    pub fn insert_approval(
+        &self,
+        conversation_id: i64,
+        tool: &str,
+        args_json: &str,
+        summary: &str,
+    ) -> Result<i64> {
+        let conn = self.0.lock().unwrap();
+        conn.execute(
+            "INSERT INTO approvals (conversation_id, tool, args_json, summary, status, created_at)
+             VALUES (?1, ?2, ?3, ?4, 'pending', ?5)",
+            rusqlite::params![conversation_id, tool, args_json, summary, now_iso()],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    fn row_to_approval(row: &rusqlite::Row) -> rusqlite::Result<Approval> {
+        Ok(Approval {
+            id: row.get(0)?,
+            conversation_id: row.get(1)?,
+            tool: row.get(2)?,
+            args_json: row.get(3)?,
+            summary: row.get(4)?,
+            status: row.get(5)?,
+            created_at: row.get(6)?,
+            resolved_at: row.get(7)?,
+        })
+    }
+
+    pub fn get_approval(&self, id: i64) -> Result<Option<Approval>> {
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, conversation_id, tool, args_json, summary, status, created_at, resolved_at
+             FROM approvals WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query([id])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(Self::row_to_approval(row)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn list_approvals(&self, pending_only: bool) -> Result<Vec<Approval>> {
+        let conn = self.0.lock().unwrap();
+        let sql = if pending_only {
+            "SELECT id, conversation_id, tool, args_json, summary, status, created_at, resolved_at
+             FROM approvals WHERE status = 'pending' ORDER BY id DESC"
+        } else {
+            "SELECT id, conversation_id, tool, args_json, summary, status, created_at, resolved_at
+             FROM approvals ORDER BY id DESC"
+        };
+        let mut stmt = conn.prepare(sql)?;
+        let rows = stmt.query_map([], Self::row_to_approval)?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn list_pending_approvals_for_conversation(&self, conversation_id: i64) -> Result<Vec<Approval>> {
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, conversation_id, tool, args_json, summary, status, created_at, resolved_at
+             FROM approvals WHERE conversation_id = ?1 AND status = 'pending' ORDER BY id DESC",
+        )?;
+        let rows = stmt.query_map([conversation_id], Self::row_to_approval)?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn resolve_approval(&self, id: i64, status: &str) -> Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute(
+            "UPDATE approvals SET status = ?1, resolved_at = ?2 WHERE id = ?3 AND status = 'pending'",
+            rusqlite::params![status, now_iso(), id],
+        )?;
+        Ok(())
+    }
+
+    /// Newest-first streak of `approved` resolutions for `tool`, stopping at the
+    /// first `rejected` (or the first non-approved status). Consumed by the
+    /// Phase 4 trust engine to decide when to promote ask -> auto.
+    pub fn count_consecutive_approvals(&self, tool: &str) -> Result<i64> {
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT status FROM approvals
+             WHERE tool = ?1 AND status IN ('approved','rejected')
+             ORDER BY id DESC",
+        )?;
+        let rows = stmt.query_map([tool], |row| row.get::<_, String>(0))?;
+        let mut count = 0;
+        for status in rows {
+            if status? == "approved" {
+                count += 1;
+            } else {
+                break;
+            }
+        }
+        Ok(count)
+    }
+
+    // --- Reminders -------------------------------------------------------------
+
+    pub fn insert_reminder(&self, text: &str, due_at: &str) -> Result<i64> {
+        let conn = self.0.lock().unwrap();
+        conn.execute(
+            "INSERT INTO reminders (text, due_at, fired, created_at) VALUES (?1, ?2, 0, ?3)",
+            rusqlite::params![text, due_at, now_iso()],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn due_unfired_reminders(&self, now_iso: &str) -> Result<Vec<Reminder>> {
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, text, due_at, fired, created_at FROM reminders
+             WHERE fired = 0 AND due_at <= ?1 ORDER BY due_at ASC",
+        )?;
+        let rows = stmt.query_map([now_iso], |row| {
+            Ok(Reminder {
+                id: row.get(0)?,
+                text: row.get(1)?,
+                due_at: row.get(2)?,
+                fired: row.get::<_, i32>(3)? != 0,
+                created_at: row.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn mark_reminder_fired(&self, id: i64) -> Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute("UPDATE reminders SET fired = 1 WHERE id = ?1", [id])?;
+        Ok(())
+    }
 }
 
 fn migrate(conn: &Connection) -> Result<()> {
@@ -837,6 +1038,29 @@ fn migrate(conn: &Connection) -> Result<()> {
             habit_id    INTEGER NOT NULL,
             logged_at   TEXT NOT NULL,
             note        TEXT
+        );
+        CREATE TABLE IF NOT EXISTS trust_policies (
+            action_kind TEXT PRIMARY KEY,
+            mode        TEXT NOT NULL CHECK (mode IN ('ask','auto')),
+            updated_at  TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS approvals (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id INTEGER NOT NULL,
+            tool            TEXT NOT NULL,
+            args_json       TEXT NOT NULL,
+            summary         TEXT NOT NULL,
+            status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','expired')),
+            created_at      TEXT NOT NULL,
+            resolved_at     TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status);
+        CREATE TABLE IF NOT EXISTS reminders (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            text        TEXT NOT NULL,
+            due_at      TEXT NOT NULL,
+            fired       INTEGER NOT NULL DEFAULT 0,
+            created_at  TEXT NOT NULL
         );",
     )?;
     Ok(())
@@ -844,4 +1068,73 @@ fn migrate(conn: &Connection) -> Result<()> {
 
 fn now_iso() -> String {
     chrono::Utc::now().to_rfc3339()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_db() -> Db {
+        let dir = std::env::temp_dir().join(format!(
+            "donna-db-test-{}-{}",
+            std::process::id(),
+            now_iso().replace([':', '.'], "-")
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        Db::open(&dir.join("t.sqlite")).unwrap()
+    }
+
+    #[test]
+    fn trust_policy_default_absent_then_upsert() {
+        let db = test_db();
+        assert_eq!(db.get_trust_policy("slack_send_message").unwrap(), None);
+        db.set_trust_policy("slack_send_message", "auto").unwrap();
+        assert_eq!(db.get_trust_policy("slack_send_message").unwrap(), Some("auto".into()));
+        db.set_trust_policy("slack_send_message", "ask").unwrap(); // upsert
+        assert_eq!(db.list_trust_policies().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn approval_lifecycle() {
+        let db = test_db();
+        let id = db.insert_approval(1, "whatsapp_send_message", r#"{"to":"+1","text":"hi"}"#, "Send WhatsApp to +1").unwrap();
+        assert_eq!(db.get_approval(id).unwrap().unwrap().status, "pending");
+        assert_eq!(db.list_pending_approvals_for_conversation(1).unwrap().len(), 1);
+        db.resolve_approval(id, "approved").unwrap();
+        let a = db.get_approval(id).unwrap().unwrap();
+        assert_eq!(a.status, "approved");
+        assert!(a.resolved_at.is_some());
+        assert!(db.list_pending_approvals_for_conversation(1).unwrap().is_empty());
+        // resolving again must not clobber
+        db.resolve_approval(id, "rejected").unwrap();
+        assert_eq!(db.get_approval(id).unwrap().unwrap().status, "approved");
+    }
+
+    #[test]
+    fn reminders_due_and_fired() {
+        let db = test_db();
+        db.insert_reminder("stretch", "2026-01-01T00:00:00Z").unwrap();
+        let due = db.due_unfired_reminders("2026-01-02T00:00:00Z").unwrap();
+        assert_eq!(due.len(), 1);
+        db.mark_reminder_fired(due[0].id).unwrap();
+        assert!(db.due_unfired_reminders("2026-01-02T00:00:00Z").unwrap().is_empty());
+        // not yet due
+        db.insert_reminder("later", "2027-01-01T00:00:00Z").unwrap();
+        assert!(db.due_unfired_reminders("2026-01-02T00:00:00Z").unwrap().is_empty());
+    }
+
+    #[test]
+    fn count_consecutive_approvals_stops_at_first_rejected() {
+        let db = test_db();
+        let a = db.insert_approval(1, "slack_send_message", "{}", "s").unwrap();
+        db.resolve_approval(a, "rejected").unwrap();
+        let b = db.insert_approval(1, "slack_send_message", "{}", "s").unwrap();
+        db.resolve_approval(b, "approved").unwrap();
+        let c = db.insert_approval(1, "slack_send_message", "{}", "s").unwrap();
+        db.resolve_approval(c, "approved").unwrap();
+        let d = db.insert_approval(1, "slack_send_message", "{}", "s").unwrap();
+        db.resolve_approval(d, "approved").unwrap();
+        // newest-first: d, c, b approved, then a rejected -> streak of 3
+        assert_eq!(db.count_consecutive_approvals("slack_send_message").unwrap(), 3);
+    }
 }

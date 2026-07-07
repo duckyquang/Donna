@@ -854,6 +854,11 @@ pub fn list_docs(db: &Db) -> Result<Vec<Doc>> {
     db.list_docs()
 }
 
+/// Create a Donna-authored local doc (source = "agent"). Returns the new doc id.
+pub fn create_doc(db: &Db, title: String, content: String) -> Result<i64> {
+    crate::docs::create(db, &title, "agent", &content)
+}
+
 pub fn get_doc(db: &Db, id: i64) -> Result<Doc> {
     db.get_doc(id)?
         .ok_or_else(|| Error::Provider(format!("Document {id} not found")))

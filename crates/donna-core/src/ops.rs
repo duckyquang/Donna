@@ -1106,6 +1106,43 @@ pub async fn whatsapp_send_message(to: String, text: String) -> Result<()> {
     whatsapp::send_message(&to, &text).await
 }
 
+const WHATSAPP_CONVERSATION_SETTING: &str = "whatsapp_conversation_id";
+
+/// Whether `last_message_at` (RFC3339) is within 6h of `now` (RFC3339). Unparseable
+/// timestamps are treated as stale so callers fall back to starting a fresh session.
+fn session_is_fresh(last_message_at: &str, now: &str) -> bool {
+    let (Ok(last), Ok(now)) = (
+        chrono::DateTime::parse_from_rfc3339(last_message_at),
+        chrono::DateTime::parse_from_rfc3339(now),
+    ) else {
+        return false;
+    };
+    now.signed_duration_since(last) < chrono::Duration::hours(6)
+}
+
+/// Rolling WhatsApp "session" conversation: reuse the stored conversation while its
+/// last message is < 6h old, otherwise start a new one (WhatsApp's 24h customer
+/// service window makes long-lived free-form threads unsafe to assume open forever;
+/// we roll sessions well within that on any lull). No messages yet in the stored
+/// conversation counts as fresh (nothing to be stale).
+pub fn whatsapp_session_conversation(db: &Db) -> Result<i64> {
+    if let Some(id) = db.get_setting(WHATSAPP_CONVERSATION_SETTING)? {
+        if let Ok(id) = id.parse::<i64>() {
+            let messages = db.get_messages(id)?;
+            let fresh = match messages.last() {
+                Some(last) => session_is_fresh(&last.created_at, &chrono::Utc::now().to_rfc3339()),
+                None => true,
+            };
+            if fresh && db.list_conversations()?.iter().any(|c| c.id == id) {
+                return Ok(id);
+            }
+        }
+    }
+    let id = db.create_conversation("WhatsApp")?;
+    db.set_setting(WHATSAPP_CONVERSATION_SETTING, &id.to_string())?;
+    Ok(id)
+}
+
 // --- Projects ----------------------------------------------------------------
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1597,5 +1634,26 @@ mod tests {
         assert!(trust_policy_set(&db, "list_docs".into(), "auto".into()).is_err());
         assert!(trust_policy_set(&db, "nonexistent".into(), "auto".into()).is_err());
         assert!(trust_policy_set(&db, "slack_send_message".into(), "bogus".into()).is_err());
+    }
+
+    #[test]
+    fn whatsapp_session_reuses_fresh_creates_stale() {
+        let db = test_db();
+        let c1 = whatsapp_session_conversation(&db).unwrap();
+        db.add_message(c1, "user", "hi").unwrap();
+        assert_eq!(whatsapp_session_conversation(&db).unwrap(), c1); // fresh -> reuse
+        // age the last message 7h via raw SQL (created_at is TEXT RFC3339)
+        let old = (chrono::Utc::now() - chrono::Duration::hours(7)).to_rfc3339();
+        db.0.lock().unwrap().execute("UPDATE messages SET created_at = ?1", rusqlite::params![old]).unwrap();
+        let c2 = whatsapp_session_conversation(&db).unwrap();
+        assert_ne!(c2, c1); // stale -> new conversation
+        assert_eq!(whatsapp_session_conversation(&db).unwrap(), c2); // sticky
+    }
+
+    #[test]
+    fn session_freshness_boundary() {
+        let now = "2026-01-01T12:00:00+00:00";
+        assert!(session_is_fresh("2026-01-01T07:00:00+00:00", now)); // 5h
+        assert!(!session_is_fresh("2026-01-01T05:00:00+00:00", now)); // 7h
     }
 }

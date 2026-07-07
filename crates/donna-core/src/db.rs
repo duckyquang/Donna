@@ -967,6 +967,20 @@ impl Db {
         conn.execute("UPDATE reminders SET fired = 1 WHERE id = ?1", [id])?;
         Ok(())
     }
+
+    // --- Webhook dedupe --------------------------------------------------------
+
+    /// Atomically claim a webhook event id. Returns `true` the first time an id is
+    /// seen, `false` on any replay (e.g. WhatsApp's at-least-once delivery retries).
+    /// Single `INSERT OR IGNORE` — no read-then-write race.
+    pub fn try_claim_webhook_event(&self, id: &str) -> Result<bool> {
+        let conn = self.0.lock().unwrap();
+        let changed = conn.execute(
+            "INSERT OR IGNORE INTO webhook_events (id, created_at) VALUES (?1, ?2)",
+            rusqlite::params![id, now_iso()],
+        )?;
+        Ok(changed == 1)
+    }
 }
 
 fn migrate(conn: &Connection) -> Result<()> {
@@ -1090,6 +1104,10 @@ fn migrate(conn: &Connection) -> Result<()> {
             due_at      TEXT NOT NULL,
             fired       INTEGER NOT NULL DEFAULT 0,
             created_at  TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS webhook_events (
+            id          TEXT PRIMARY KEY,
+            created_at  TEXT NOT NULL
         );",
     )?;
     Ok(())
@@ -1184,5 +1202,13 @@ mod tests {
         db.resolve_approval(d, "approved").unwrap();
         // newest-first: d, c, b approved, then a rejected -> streak of 3
         assert_eq!(db.count_consecutive_approvals("slack_send_message").unwrap(), 3);
+    }
+
+    #[test]
+    fn webhook_event_claim_once() {
+        let db = test_db();
+        assert!(db.try_claim_webhook_event("wamid.A1").unwrap());
+        assert!(!db.try_claim_webhook_event("wamid.A1").unwrap());
+        assert!(db.try_claim_webhook_event("wamid.A2").unwrap());
     }
 }

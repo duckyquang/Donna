@@ -1744,7 +1744,11 @@ mod tests {
 
     #[test]
     fn conversation_crud_roundtrip() {
-        let dir = std::env::temp_dir().join(format!("donna-ops-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "donna-ops-{}-{}",
+            std::process::id(),
+            crate::db::unique_test_suffix()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         let db = Db::open(&dir.join("t.sqlite")).unwrap();
 

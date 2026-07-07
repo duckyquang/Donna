@@ -791,7 +791,11 @@ mod tests {
 
     fn test_db() -> Db {
         crate::secrets::init_test_file_store();
-        let dir = std::env::temp_dir().join(format!("donna-tools-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "donna-tools-{}-{}",
+            std::process::id(),
+            crate::db::unique_test_suffix()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         Db::open(&dir.join("t.sqlite")).unwrap()
     }

@@ -32,7 +32,9 @@ async fn main() {
     let port: u16 = std::env::var("DONNA_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8377);
     let db = Arc::new(Db::open(&data_dir.join("donna.sqlite")).expect("open db"));
     let (events, _) = tokio::sync::broadcast::channel(256);
-    let state = AppState { db, token, events };
+    let wa_verify_token = std::env::var("DONNA_WA_VERIFY_TOKEN").ok();
+    let wa_app_secret = std::env::var("DONNA_WA_APP_SECRET").ok();
+    let state = AppState { db, token, events, wa_verify_token, wa_app_secret };
     // Run scheduled routines; due ones fire notify() → broadcast to WS clients.
     donna_core::scheduler::run_loop(state.db.clone(), Arc::new(state.clone()));
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await.unwrap();

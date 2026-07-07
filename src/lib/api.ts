@@ -933,6 +933,12 @@ export const api = {
   whatsappSendMessage(to: string, text: string): Promise<void> {
     return invoke("whatsapp_send_message", { to, text });
   },
+  whatsappSetMyNumber(number: string): Promise<void> {
+    return invoke("whatsapp_set_my_number", { number });
+  },
+  whatsappGetMyNumber(): Promise<string | null> {
+    return invoke("whatsapp_get_my_number");
+  },
 
   kgReindexEmbeddings(): Promise<number> {
     return invoke("kg_reindex_embeddings");

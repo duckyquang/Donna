@@ -166,6 +166,8 @@ async fn dispatch(st: &AppState, cmd: &str, a: &Value) -> Result<Value, String> 
         "whatsapp_set_credentials" => ok!(ops::whatsapp_set_credentials(arg(&a, "accessToken")?, arg(&a, "phoneNumberId")?)),
         "whatsapp_disconnect" => ok!(ops::whatsapp_disconnect()),
         "whatsapp_send_message" => ok!(ops::whatsapp_send_message(arg(&a, "to")?, arg(&a, "text")?).await),
+        "whatsapp_set_my_number" => ok!(ops::whatsapp_set_my_number(db, arg(&a, "number")?)),
+        "whatsapp_get_my_number" => ok!(ops::whatsapp_get_my_number(db)),
 
         // --- Projects (DB-side) ---
         "project_list" => ok!(ops::project_list(db).await),

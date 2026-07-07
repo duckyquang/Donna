@@ -31,6 +31,8 @@ export default function Integrations() {
   const [telegramChatId, setTelegramChatId] = useState("");
   const [whatsappToken, setWhatsappToken] = useState("");
   const [whatsappPhoneId, setWhatsappPhoneId] = useState("");
+  const [whatsappMyNumber, setWhatsappMyNumber] = useState("");
+  const [whatsappNumberSaved, setWhatsappNumberSaved] = useState(false);
   const [discordToken, setDiscordToken] = useState("");
 
   const [gmailMessages, setGmailMessages] = useState<GmailMessage[]>([]);
@@ -112,6 +114,9 @@ export default function Integrations() {
     refresh()
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
+    api.whatsappGetMyNumber()
+      .then((n) => setWhatsappMyNumber(n ?? ""))
+      .catch(() => {});
   }, []);
 
   const status = (id: string) => statuses.find((s) => s.id === id);
@@ -395,6 +400,33 @@ export default function Integrations() {
                 </Button>
               </div>
             )}
+            <div className="mt-3 space-y-2 border-t border-white/10 pt-3">
+              <p className="text-xs text-gray-400">
+                Your WhatsApp number — the webhook only replies to messages from this number.
+              </p>
+              <input
+                value={whatsappMyNumber}
+                onChange={(e) => {
+                  setWhatsappMyNumber(e.target.value);
+                  setWhatsappNumberSaved(false);
+                }}
+                placeholder="+14155551234"
+                className={inputClass}
+              />
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  run("whatsapp-my-number", async () => {
+                    await api.whatsappSetMyNumber(whatsappMyNumber.trim());
+                    setWhatsappNumberSaved(true);
+                  })
+                }
+                disabled={busy === "whatsapp-my-number" || !whatsappMyNumber.trim()}
+              >
+                {busy === "whatsapp-my-number" ? <Spinner /> : <Check size={16} />} Save number
+              </Button>
+              {whatsappNumberSaved && <p className="text-xs text-green-400">Saved.</p>}
+            </div>
           </Card>
 
           <Card name="Discord" sub="Send messages via Discord bot" connected={!!status("discord")?.connected}>

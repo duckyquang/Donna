@@ -81,8 +81,13 @@ Phase 2 (Hands) of the spec — done:
 - [x] Agent loop, tool registry, trust engine (earned autonomy for outbound actions)
 - [x] Approvals end-to-end (WS events, RPC arms, Chat UI cards, Settings policy editor)
 
-Not yet built (Phases 3–6 of the spec):
-- [ ] Two-way WhatsApp (webhook, allowlist, voice notes)
+Phase 3 (Reach) of the spec — done:
+- [x] Two-way WhatsApp: Meta Cloud API webhook (verify + signed receive), owner
+      allowlist (`whatsapp_my_number`, set from Integrations), inbound dedup,
+      agent-loop replies, approvals as interactive buttons. Voice notes deferred
+      to Phase 5. See `donna-server/README.md` for the Meta setup guide.
+
+Not yet built (Phases 4–6 of the spec):
 - [ ] `USER.md` / `MEMORY.md`, FTS5 message search, events log, background review,
       suggestion queue, agentic `[SILENT]` routines
 - [ ] Voice: desktop push-to-talk mode, then WhatsApp voice notes

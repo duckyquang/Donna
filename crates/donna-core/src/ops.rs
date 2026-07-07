@@ -1146,6 +1146,20 @@ pub fn whatsapp_session_conversation(db: &Db) -> Result<i64> {
 
 const WHATSAPP_MY_NUMBER_SETTING: &str = "whatsapp_my_number";
 
+/// Owner's WhatsApp number (E.164) — the webhook allowlist. Set from the Integrations
+/// UI; read back to prefill that same field.
+pub fn whatsapp_set_my_number(db: &Db, number: String) -> Result<()> {
+    let number = number.trim();
+    if number.is_empty() {
+        return Err(Error::Provider("WhatsApp number cannot be empty".into()));
+    }
+    db.set_setting(WHATSAPP_MY_NUMBER_SETTING, number)
+}
+
+pub fn whatsapp_get_my_number(db: &Db) -> Result<Option<String>> {
+    db.get_setting(WHATSAPP_MY_NUMBER_SETTING)
+}
+
 /// Handle an inbound WhatsApp text message: append it to the rolling session
 /// conversation, run it through the agent loop, and reply with the result. Never
 /// streams — the caller is a webhook, so only the final message (or an error) goes

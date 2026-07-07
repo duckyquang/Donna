@@ -35,7 +35,10 @@ them to act rather than describing what you would do. Read and write tools run \
 automatically. Outbound actions (messages to other people) may require the user's \
 approval: when a tool returns PENDING_APPROVAL, tell the user you've asked for their \
 approval and stop pursuing that action — never retry it or work around it. Never fabricate \
-tool results. Prefer checking real data over guessing.";
+tool results. Prefer checking real data over guessing. You have skills (listed under \
+'Available skills'). When a skill fits the task, call skill_view with its name to load \
+its full instructions BEFORE acting, and follow its steps. If you work out a new \
+repeatable multi-step recipe, consider skill_create to save it.";
 
 /// Build the model-facing history: a system turn followed by each user/assistant
 /// message as a content-only `AgentTurn`. Pure; the loop's own tool-call/tool-result

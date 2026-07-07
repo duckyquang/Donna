@@ -15,6 +15,7 @@ use crate::knowledge;
 use crate::providers::{self, ChatTurn};
 use crate::retrieval;
 use crate::secrets;
+use crate::skills;
 use crate::tools::{self, Risk};
 
 const DONNA_SYSTEM_PROMPT: &str = "You are Donna, a warm, sharp, and proactive personal \
@@ -62,12 +63,17 @@ fn build_system_prompt(
     let known = knowledge::summary_for_prompt()?;
     let setup = build_setup_context(config)?;
     let memory = knowledge::memory_prompt_section()?;
+    let skills = skills::skills_prompt_section()?;
 
     let mut prompt = format!(
         "{DONNA_SYSTEM_PROMPT}\n\n## Basics checklist\n{basics}\n\n"
     );
     if !memory.is_empty() {
         prompt.push_str(&memory);
+        prompt.push_str("\n\n");
+    }
+    if !skills.is_empty() {
+        prompt.push_str(&skills);
         prompt.push_str("\n\n");
     }
     prompt.push_str(&format!(
@@ -1930,6 +1936,18 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).unwrap();
         Db::open(&dir.join("t.sqlite")).unwrap()
+    }
+
+    #[test]
+    fn system_prompt_lists_available_skills() {
+        let db = test_db();
+        let _g = crate::skills::tests::skills_test_guard();
+        crate::skills::save_skill("Trip Planner", "Plan a trip", "travel", "steps").unwrap();
+        let cfg = load_config(&db).unwrap();
+        let p = build_system_prompt(&cfg, None).unwrap();
+        assert!(p.contains("## Available skills"));
+        assert!(p.contains("Trip Planner"));
+        assert!(!p.contains("steps")); // body not dumped into the prompt
     }
 
     #[tokio::test]

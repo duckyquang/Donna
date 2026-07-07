@@ -1,4 +1,4 @@
-//! Agent tool registry: the 28 tools the agent loop (Task 5) exposes to the model.
+//! Agent tool registry: the tools the agent loop exposes to the model (see `TOOL_COUNT`).
 //!
 //! Each tool has a [`Risk`] class that the loop uses to gate execution:
 //! - `Read`   — no side effects; run freely.

@@ -31,15 +31,21 @@ pub fn decide(db: &Db, tool_name: &str) -> Result<Decision> {
 }
 
 /// File an approval request for a tool call: inserts the `approvals` row and a matching
-/// notification, then returns the full inserted row.
+/// notification, then returns the full inserted row. If an identical call
+/// (conversation, tool, args) is already pending — a model that ignores
+/// `PENDING_APPROVAL` and re-asks — returns the existing row instead of filing a
+/// duplicate row/notification.
 pub fn request_approval(
     db: &Db,
     conversation_id: i64,
     tool: &str,
     args: &Value,
 ) -> Result<Approval> {
-    let summary = tools::summarize_call(tool, args);
     let args_json = serde_json::to_string(args)?;
+    if let Some(existing) = db.find_pending_approval(conversation_id, tool, &args_json)? {
+        return Ok(existing);
+    }
+    let summary = tools::summarize_call(tool, args);
     let id = db.insert_approval(conversation_id, tool, &args_json, &summary)?;
     db.insert_notification("Approval needed", &summary, None, None)?;
     db.get_approval(id)?
@@ -92,5 +98,28 @@ mod tests {
             .unwrap()
             .iter()
             .any(|n| n.title == "Approval needed"));
+    }
+
+    #[test]
+    fn request_approval_dedupes_identical_pending_calls() {
+        let db = test_db();
+        let args = serde_json::json!({"to":"+15550100","text":"yo"});
+
+        let first = request_approval(&db, 7, "whatsapp_send_message", &args).unwrap();
+        let second = request_approval(&db, 7, "whatsapp_send_message", &args).unwrap();
+
+        assert_eq!(first.id, second.id, "identical re-ask must return the same row");
+        assert_eq!(db.list_approvals(false).unwrap().len(), 1, "no duplicate row");
+        assert_eq!(
+            db.list_notifications().unwrap().len(),
+            1,
+            "no duplicate notification"
+        );
+
+        // A different args_json for the same tool/conversation still creates a new row.
+        let different = serde_json::json!({"to":"+15550199","text":"yo"});
+        let third = request_approval(&db, 7, "whatsapp_send_message", &different).unwrap();
+        assert_ne!(third.id, first.id);
+        assert_eq!(db.list_approvals(false).unwrap().len(), 2);
     }
 }

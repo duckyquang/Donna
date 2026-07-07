@@ -417,7 +417,7 @@ pub async fn send_chat(
     let result = providers::stream_chat(
         &config.provider,
         &config.model,
-        api_key,
+        api_key.clone(),
         &config.ollama_host,
         &turns,
         |token| {
@@ -437,7 +437,7 @@ pub async fn send_chat(
                 conversation_id,
                 &config.provider,
                 &config.model,
-                secrets::get_api_key(&config.provider)?,
+                api_key.clone(),
                 &config.ollama_host,
             )
             .await;

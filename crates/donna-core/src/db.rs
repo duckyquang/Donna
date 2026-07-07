@@ -873,6 +873,30 @@ impl Db {
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
+    /// The existing pending approval for this exact (conversation, tool, args), if any —
+    /// used to dedupe a model that re-issues an identical `Ask` call before the user
+    /// has resolved the first request.
+    pub fn find_pending_approval(
+        &self,
+        conversation_id: i64,
+        tool: &str,
+        args_json: &str,
+    ) -> Result<Option<Approval>> {
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, conversation_id, tool, args_json, summary, status, created_at, resolved_at
+             FROM approvals
+             WHERE conversation_id = ?1 AND tool = ?2 AND args_json = ?3 AND status = 'pending'
+             ORDER BY id DESC LIMIT 1",
+        )?;
+        let mut rows = stmt.query(rusqlite::params![conversation_id, tool, args_json])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(Self::row_to_approval(row)?))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub fn resolve_approval(&self, id: i64, status: &str) -> Result<()> {
         let conn = self.0.lock().unwrap();
         conn.execute(

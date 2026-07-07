@@ -124,7 +124,7 @@ pub async fn run_agent_turn(
                 conversation_id,
                 &config.provider,
                 &config.model,
-                crate::secrets::get_api_key(&config.provider)?,
+                Some(api_key.to_string()),
                 &config.ollama_host,
             )
             .await;
@@ -195,7 +195,14 @@ async fn handle_tool_call(
     // Parse arguments; a parse failure becomes the result so the model can retry.
     let args: serde_json::Value = match serde_json::from_str(&call.arguments) {
         Ok(v) => v,
-        Err(e) => return format!("bad arguments for {}: {e}", call.name),
+        Err(e) => {
+            let result = format!("bad arguments for {}: {e}", call.name);
+            return if errors.record_error(&call.name) {
+                TOOL_DISABLED_MSG.to_string()
+            } else {
+                result
+            };
+        }
     };
 
     match trust::decide(db, &call.name) {
@@ -241,7 +248,14 @@ async fn handle_tool_call(
             Err(e) => e.to_string(),
         },
         // Unknown tool (or trust lookup failure): feed the error back to the model.
-        Err(e) => e.to_string(),
+        Err(e) => {
+            let result = e.to_string();
+            if errors.record_error(&call.name) {
+                TOOL_DISABLED_MSG.to_string()
+            } else {
+                result
+            }
+        }
     }
 }
 
@@ -287,5 +301,61 @@ mod tests {
         assert!(!t.record_error("list_docs")); // independent per tool
         assert!(t.is_disabled("kb_search"));
         assert!(!t.is_disabled("list_docs"));
+    }
+
+    fn test_db() -> Db {
+        let dir = std::env::temp_dir().join(format!("donna-agent-{}-{}", std::process::id(), rand_suffix()));
+        std::fs::create_dir_all(&dir).unwrap();
+        Db::open(&dir.join("t.sqlite")).unwrap()
+    }
+
+    fn rand_suffix() -> u64 {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64
+    }
+
+    /// Bad JSON arguments must count as a strike, same as an execute() error: the
+    /// second occurrence in a turn disables the tool rather than retrying forever.
+    #[tokio::test]
+    async fn parse_failure_counts_toward_two_strike_disable() {
+        let db = test_db();
+        let mut errors = ToolErrorTracker::default();
+        let call = providers::ToolCall {
+            id: "1".into(),
+            name: "list_docs".into(),
+            arguments: "{not json".into(),
+        };
+
+        let first = handle_tool_call(&db, 1, &call, &mut errors, &|_| {}).await;
+        assert!(first.contains("bad arguments"));
+        assert!(!errors.is_disabled("list_docs"));
+
+        let second = handle_tool_call(&db, 1, &call, &mut errors, &|_| {}).await;
+        assert_eq!(second, TOOL_DISABLED_MSG);
+        assert!(errors.is_disabled("list_docs"));
+
+        // Once disabled, short-circuits before even parsing.
+        let third = handle_tool_call(&db, 1, &call, &mut errors, &|_| {}).await;
+        assert_eq!(third, TOOL_DISABLED_MSG);
+    }
+
+    /// An unknown tool name (trust::decide's Err arm) also counts toward the strike.
+    #[tokio::test]
+    async fn unknown_tool_counts_toward_two_strike_disable() {
+        let db = test_db();
+        let mut errors = ToolErrorTracker::default();
+        let call = providers::ToolCall {
+            id: "1".into(),
+            name: "no_such_tool".into(),
+            arguments: "{}".into(),
+        };
+
+        let first = handle_tool_call(&db, 1, &call, &mut errors, &|_| {}).await;
+        assert!(first.contains("unknown tool"));
+        assert!(!errors.is_disabled("no_such_tool"));
+
+        let second = handle_tool_call(&db, 1, &call, &mut errors, &|_| {}).await;
+        assert_eq!(second, TOOL_DISABLED_MSG);
+        assert!(errors.is_disabled("no_such_tool"));
     }
 }

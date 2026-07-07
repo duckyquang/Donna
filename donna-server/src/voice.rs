@@ -63,12 +63,15 @@ pub struct SpeakReq {
     voice: Option<String>,
 }
 
-/// POST `/voice/speak` — `{text, voice?}` → `audio/mpeg` bytes.
-pub async fn speak(State(_st): State<AppState>, Json(req): Json<SpeakReq>) -> Response {
-    let voice = req
-        .voice
-        .filter(|v| audio::is_valid_voice(v))
-        .unwrap_or_else(|| audio::DEFAULT_TTS_VOICE.to_string());
+/// POST `/voice/speak` — `{text, voice?}` → `audio/mpeg` bytes. An explicit valid
+/// `voice` in the body wins; otherwise falls back to the user's configured Settings
+/// voice (not the hardcoded default), so desktop replies honor the same voice as
+/// the WhatsApp path.
+pub async fn speak(State(st): State<AppState>, Json(req): Json<SpeakReq>) -> Response {
+    let voice = match req.voice.as_deref() {
+        Some(v) if audio::is_valid_voice(v) => v.to_string(),
+        _ => donna_core::ops::tts_voice_setting(&st.db),
+    };
 
     let key = match require_openai_key() {
         Ok(k) => k,

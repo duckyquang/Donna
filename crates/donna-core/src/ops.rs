@@ -1133,6 +1133,7 @@ pub fn whatsapp_session_conversation(db: &Db) -> Result<i64> {
                 Some(last) => session_is_fresh(&last.created_at, &chrono::Utc::now().to_rfc3339()),
                 None => true,
             };
+            // ponytail: full scan to detect a vanished conversation — fine for a single-user table.
             if fresh && db.list_conversations()?.iter().any(|c| c.id == id) {
                 return Ok(id);
             }

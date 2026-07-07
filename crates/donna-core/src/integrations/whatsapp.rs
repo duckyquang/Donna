@@ -57,13 +57,26 @@ pub async fn send_message(to: &str, text: &str) -> Result<()> {
     Ok(())
 }
 
+/// Truncate `s` to at most `max_bytes` bytes, backing off to the nearest char
+/// boundary so the result is always valid UTF-8.
+fn truncate_bytes(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes;
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 /// Build the interactive button-message body for an approval request. Pure so it's
 /// unit-testable without a network call. `summary` is truncated to keep the body
-/// (including the "Approval needed:\n" prefix) within WhatsApp's 1024-char limit.
+/// (including the "Approval needed:\n" prefix) within WhatsApp's 1024-BYTE limit.
 fn approval_buttons_body(to_digits: &str, approval_id: i64, summary: &str) -> serde_json::Value {
     const PREFIX: &str = "Approval needed:\n";
-    let max_summary = 1024 - PREFIX.len();
-    let truncated: String = summary.chars().take(max_summary.min(900)).collect();
+    let max_summary_bytes = (1024 - PREFIX.len()).min(900);
+    let truncated = truncate_bytes(summary, max_summary_bytes);
     serde_json::json!({
         "messaging_product": "whatsapp",
         "to": to_digits,
@@ -119,5 +132,15 @@ mod tests {
         assert_eq!(v["interactive"]["action"]["buttons"][1]["reply"]["id"], "reject:42");
         assert!(v["interactive"]["body"]["text"].as_str().unwrap().len() <= 1024);
         assert!(v["interactive"]["action"]["buttons"][0]["reply"]["title"].as_str().unwrap().len() <= 20);
+    }
+
+    #[test]
+    fn approval_buttons_truncate_multibyte_by_bytes() {
+        // Meta's 1024 limit is bytes, not chars. A multibyte summary must still
+        // produce a body <= 1024 bytes; slicing on a non-char-boundary would
+        // panic, so this test passing also proves boundary safety.
+        let v = approval_buttons_body("15550100", 42, &"🎉".repeat(2000));
+        let body_text = v["interactive"]["body"]["text"].as_str().unwrap();
+        assert!(body_text.len() <= 1024, "body must be <= 1024 bytes, was {}", body_text.len());
     }
 }

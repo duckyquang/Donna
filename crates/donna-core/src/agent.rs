@@ -12,8 +12,9 @@
 
 use std::collections::HashMap;
 
-use crate::db::{Db, Message};
+use crate::db::{Approval, Db, Message};
 use crate::error::{Error, Result};
+use crate::integrations::whatsapp;
 use crate::ops::{self, ChatEvent};
 use crate::providers::{self, AgentTurn, FunctionCall, ToolCallOut};
 use crate::{tools, trust};
@@ -247,12 +248,18 @@ async fn handle_tool_call(
             }
         }
         Ok(trust::Decision::Ask) => match trust::request_approval(db, conversation_id, &call.name, &args) {
-            Ok(approval) => {
+            Ok((approval, newly_created)) => {
                 on_event(ChatEvent::Approval {
                     approval_id: approval.id,
-                    summary: approval.summary,
+                    summary: approval.summary.clone(),
                     tool: call.name.clone(),
                 });
+                // Only push WhatsApp buttons for a freshly-filed approval — request_approval
+                // dedupes identical re-asks, and pushing again on every model retry would
+                // spam the user with duplicate button messages for the same approval.
+                if newly_created {
+                    push_whatsapp_approval(db, &approval).await;
+                }
                 PENDING_APPROVAL_MSG.to_string()
             }
             Err(e) => e.to_string(),
@@ -267,6 +274,22 @@ async fn handle_tool_call(
             }
         }
     }
+}
+
+/// Best-effort push of approve/reject buttons to WhatsApp for a freshly-filed approval.
+/// No-op (silently) if WhatsApp isn't connected, no number is configured, or the send
+/// fails — this is a convenience notification, not the approval's system of record.
+async fn push_whatsapp_approval(db: &Db, approval: &Approval) {
+    if !whatsapp::is_connected().unwrap_or(false) {
+        return;
+    }
+    let Ok(Some(my_number)) = db.get_setting("whatsapp_my_number") else {
+        return;
+    };
+    if my_number.is_empty() {
+        return;
+    }
+    let _ = whatsapp::send_approval_buttons(&my_number, approval.id, &approval.summary).await;
 }
 
 /// The content of the most recent assistant `AgentTurn`, if any (used at the iteration cap).

@@ -1144,6 +1144,95 @@ pub fn whatsapp_session_conversation(db: &Db) -> Result<i64> {
     Ok(id)
 }
 
+const WHATSAPP_MY_NUMBER_SETTING: &str = "whatsapp_my_number";
+
+/// Handle an inbound WhatsApp text message: append it to the rolling session
+/// conversation, run it through the agent loop, and reply with the result. Never
+/// streams — the caller is a webhook, so only the final message (or an error) goes
+/// back over WhatsApp. Every failure past "append the user message" is swallowed:
+/// a webhook handler must not surface an `Err` to Meta.
+pub async fn whatsapp_handle_text(db: &Db, text: &str) -> Result<()> {
+    let conv = whatsapp_session_conversation(db)?;
+    db.add_message(conv, "user", text)?;
+
+    let last_id_before = db.get_messages(conv)?.last().map(|m| m.id).unwrap_or(0);
+
+    let last_error: std::sync::Arc<std::sync::Mutex<Option<String>>> = Default::default();
+    let on_event = {
+        let last_error = last_error.clone();
+        move |ev: ChatEvent| {
+            if let ChatEvent::Error { message } = ev {
+                *last_error.lock().unwrap() = Some(message);
+            }
+        }
+    };
+    let _ = send_chat(db, conv, &on_event).await;
+
+    let Some(my_number) = db.get_setting(WHATSAPP_MY_NUMBER_SETTING)? else {
+        eprintln!("whatsapp_handle_text: no whatsapp_my_number set, nowhere to reply");
+        return Ok(());
+    };
+
+    let reply = match db.get_messages(conv)?.into_iter().last() {
+        Some(m) if m.id != last_id_before && m.role == "assistant" => m.content,
+        _ => last_error
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| "I hit a problem handling that.".to_string()),
+    };
+
+    if let Err(e) = whatsapp::send_message(&my_number, &reply).await {
+        eprintln!("whatsapp_handle_text: send_message failed: {e}");
+    }
+    Ok(())
+}
+
+/// Parse a WhatsApp interactive button reply id into `(approve, approval_id)`.
+/// `"approve:42"` -> `Some((true, 42))`, `"reject:7"` -> `Some((false, 7))`, anything
+/// else (unknown prefix, missing colon, non-numeric id) -> `None`. Pure.
+pub fn parse_button_id(id: &str) -> Option<(bool, i64)> {
+    let (prefix, num) = id.split_once(':')?;
+    let approve = match prefix {
+        "approve" => true,
+        "reject" => false,
+        _ => return None,
+    };
+    num.parse::<i64>().ok().map(|n| (approve, n))
+}
+
+/// Handle an inbound WhatsApp approve/reject button tap: resolve the approval and
+/// echo the outcome back over WhatsApp (best-effort — `approval_respond` already
+/// persists the in-conversation message and notification). Every send failure is
+/// swallowed so the webhook handler never errors.
+pub async fn whatsapp_handle_button(db: &Db, button_id: &str) -> Result<()> {
+    let Some(my_number) = db.get_setting(WHATSAPP_MY_NUMBER_SETTING)? else {
+        return Ok(());
+    };
+
+    let Some((approve, id)) = parse_button_id(button_id) else {
+        let _ = whatsapp::send_message(&my_number, "I didn't recognize that button.").await;
+        return Ok(());
+    };
+
+    let summary = db.get_approval(id)?.map(|a| a.summary).unwrap_or_default();
+    let outcome = approval_respond(db, id, approve).await?;
+    let reply = if outcome == "approved" {
+        format!("Done: {summary}")
+    } else if let Some(err) = outcome.strip_prefix("failed: ") {
+        format!("That failed: {err}")
+    } else if outcome == "rejected" {
+        format!("Cancelled: {summary}")
+    } else {
+        "Already handled.".to_string()
+    };
+
+    if let Err(e) = whatsapp::send_message(&my_number, &reply).await {
+        eprintln!("whatsapp_handle_button: send_message failed: {e}");
+    }
+    Ok(())
+}
+
 // --- Projects ----------------------------------------------------------------
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1565,7 +1654,7 @@ mod tests {
     #[tokio::test]
     async fn approval_respond_reject_path() {
         let db = test_db();
-        let a = crate::trust::request_approval(
+        let (a, _) = crate::trust::request_approval(
             &db,
             1,
             "slack_send_message",
@@ -1580,7 +1669,7 @@ mod tests {
     #[tokio::test]
     async fn approval_respond_is_idempotent() {
         let db = test_db();
-        let a = crate::trust::request_approval(
+        let (a, _) = crate::trust::request_approval(
             &db,
             1,
             "slack_send_message",
@@ -1600,7 +1689,7 @@ mod tests {
         // without hitting the network.
         let db = test_db();
         let conv_id = create_conversation(&db, "New conversation".into()).unwrap();
-        let a = crate::trust::request_approval(
+        let (a, _) = crate::trust::request_approval(
             &db,
             conv_id,
             "slack_send_message",
@@ -1656,5 +1745,60 @@ mod tests {
         let now = "2026-01-01T12:00:00+00:00";
         assert!(session_is_fresh("2026-01-01T07:00:00+00:00", now)); // 5h
         assert!(!session_is_fresh("2026-01-01T05:00:00+00:00", now)); // 7h
+    }
+
+    #[test]
+    fn parse_button_id_cases() {
+        assert_eq!(parse_button_id("approve:42"), Some((true, 42)));
+        assert_eq!(parse_button_id("reject:7"), Some((false, 7)));
+        assert_eq!(parse_button_id("approve:-3"), Some((true, -3)));
+        assert_eq!(parse_button_id("garbage"), None);
+        assert_eq!(parse_button_id(""), None);
+        assert_eq!(parse_button_id("approve:abc"), None);
+        assert_eq!(parse_button_id("whatever:5"), None);
+    }
+
+    #[tokio::test]
+    async fn whatsapp_handle_button_reject_path_resolves_despite_send_failure() {
+        let db = test_db();
+        db.set_setting("whatsapp_my_number", "+15550100").unwrap();
+        let (a, _) = crate::trust::request_approval(
+            &db,
+            1,
+            "slack_send_message",
+            &serde_json::json!({"channel":"#g","text":"x"}),
+        )
+        .unwrap();
+
+        // No WhatsApp credentials configured, so the echo send will fail; the handler
+        // must swallow that and still resolve the approval, returning Ok.
+        let result = whatsapp_handle_button(&db, &format!("reject:{}", a.id)).await;
+        assert!(result.is_ok());
+        assert_eq!(db.get_approval(a.id).unwrap().unwrap().status, "rejected");
+    }
+
+    #[tokio::test]
+    async fn whatsapp_handle_button_unrecognized_id_is_ok() {
+        let db = test_db();
+        db.set_setting("whatsapp_my_number", "+15550100").unwrap();
+        let result = whatsapp_handle_button(&db, "garbage").await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn whatsapp_handle_button_no_my_number_is_ok() {
+        let db = test_db();
+        let (a, _) = crate::trust::request_approval(
+            &db,
+            1,
+            "slack_send_message",
+            &serde_json::json!({"channel":"#g","text":"x"}),
+        )
+        .unwrap();
+        // my_number unset entirely: nothing to send to, but should not error and
+        // should not resolve the approval (bailed before parsing).
+        let result = whatsapp_handle_button(&db, &format!("approve:{}", a.id)).await;
+        assert!(result.is_ok());
+        assert_eq!(db.get_approval(a.id).unwrap().unwrap().status, "pending");
     }
 }

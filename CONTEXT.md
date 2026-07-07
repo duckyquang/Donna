@@ -160,6 +160,22 @@ knowledge base, rendered as cartography.
 
 This is the visual front-end of the §9 knowledge base.
 
+### 4.8 Skills
+A **skill** is a folder on disk holding a `SKILL.md` (frontmatter — name, description,
+category — plus a step-by-step body) and, optionally, reference files alongside it.
+Skills live at `DONNA_SKILLS_DIR` (`<data_dir>/skills` on the server), mirroring the
+knowledge base's root-resolution and traversal-guard approach.
+- **Discover**: every chat's system prompt carries a `## Available skills` section
+  (name + description only, never the body) so Donna knows what exists without
+  spending context on bodies she isn't using.
+- **Use**: the agent calls `skills_list` to browse, then `skill_view` to load a
+  skill's full instructions before acting on it.
+- **Author**: Donna can write a new skill herself (`skill_create`) when asked in
+  chat, or when the nightly background review spots a recurring recipe worth turning
+  into a reusable skill (a `kind:"skill"` suggestion the user accepts or dismisses).
+- **Browse**: the Skills page lists the catalog (name, category, description) and
+  renders a selected skill's `SKILL.md` body as Markdown.
+
 ---
 
 ## 5. Architecture

@@ -1093,6 +1093,16 @@ pub fn delete_doc(db: &Db, id: i64) -> Result<()> {
     db.delete_doc(id)
 }
 
+// --- Skills -------------------------------------------------------------------
+
+pub fn skills_list() -> Result<Vec<skills::SkillMeta>> {
+    skills::list_skills()
+}
+
+pub fn skill_view(name: String, path: Option<String>) -> Result<String> {
+    skills::view_skill(&name, path.as_deref())
+}
+
 // --- Gmail ------------------------------------------------------------------
 
 pub async fn gmail_list_messages(max_results: u32) -> Result<Vec<google::GmailMessage>> {

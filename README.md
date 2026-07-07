@@ -129,6 +129,18 @@ deployment (Docker Compose + Cloudflare Tunnel).
 
 ---
 
+## Skills
+
+Donna can discover, use, and author her own **skills** — `SKILL.md` files (frontmatter
++ step-by-step instructions) that live on disk at `DONNA_SKILLS_DIR`
+(`<data_dir>/skills` on the server). Every chat's system prompt lists the available
+skills by name and description; Donna reads the full body before acting on one. She can
+write a new skill herself when you ask her to, or accept a nightly-review suggestion
+that turns a recurring recipe into a reusable skill. Browse and read the catalog on the
+**Skills** page.
+
+---
+
 ## Your data stays yours
 
 - **Local-first.** Chats, memory, and docs are stored on your device in a local database.

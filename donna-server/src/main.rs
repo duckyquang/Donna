@@ -27,6 +27,8 @@ async fn main() {
 
     std::env::set_var("DONNA_KB_DIR", data_dir.join("knowledge-base"));
     let _ = donna_core::knowledge::ensure_root();
+    std::env::set_var("DONNA_SKILLS_DIR", data_dir.join("skills"));
+    let _ = donna_core::skills::ensure_root();
     secrets::init(Box::new(secrets::FileStore::new(data_dir.join("secrets.json"))));
     let token = std::env::var("DONNA_TOKEN").expect("DONNA_TOKEN is required");
     let port: u16 = std::env::var("DONNA_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8377);

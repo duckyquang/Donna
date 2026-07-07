@@ -13,6 +13,7 @@ import Projects from "./routes/Projects";
 import Productivity from "./routes/Productivity";
 import Notifications from "./routes/Notifications";
 import Docs from "./routes/Docs";
+import Skills from "./routes/Skills";
 import Calendar from "./routes/Calendar";
 import MindMap from "./routes/MindMap";
 import Integrations from "./routes/Integrations";
@@ -101,6 +102,7 @@ export default function App() {
           <Route path="/productivity" element={<Productivity />} />
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/docs" element={<Docs />} />
+          <Route path="/skills" element={<Skills />} />
           <Route path="/calendar" element={<Calendar />} />
           <Route path="/mind-map" element={<MindMap />} />
           <Route path="/integrations" element={<Integrations />} />

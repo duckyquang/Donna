@@ -135,6 +135,10 @@ async fn dispatch(st: &AppState, cmd: &str, a: &Value) -> Result<Value, String> 
         "get_doc" => ok!(ops::get_doc(db, arg(&a, "id")?)),
         "delete_doc" => ok!(ops::delete_doc(db, arg(&a, "id")?)),
 
+        // --- Skills ---
+        "skills_list" => ok!(ops::skills_list()),
+        "skill_view" => ok!(ops::skill_view(arg(&a, "name")?, arg(&a, "path")?)),
+
         // --- Gmail & Drive ---
         "gmail_list_messages" => ok!(ops::gmail_list_messages(arg(&a, "maxResults")?).await),
         "gmail_create_draft" => ok!(ops::gmail_create_draft(arg(&a, "to")?, arg(&a, "subject")?, arg(&a, "body")?).await),

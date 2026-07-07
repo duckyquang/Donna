@@ -301,6 +301,13 @@ export interface QuickChatCtx {
   app_name: string;
 }
 
+export interface Skill {
+  name: string;
+  slug: string;
+  description: string;
+  category: string;
+}
+
 function toEvent(e: RawCalendarEvent): CalendarEvent {
   return {
     id: e.id,
@@ -889,6 +896,10 @@ export const api = {
   deleteDoc(id: string): Promise<void> {
     return invoke("delete_doc", { id: Number(id) });
   },
+
+  // --- Skills ---
+  skillsList: () => invoke<Skill[]>("skills_list"),
+  skillView: (name: string, path?: string) => invoke<string>("skill_view", { name, path: path ?? null }),
 
   // --- Gmail & Drive ---
   async gmailListMessages(maxResults = 10): Promise<GmailMessage[]> {

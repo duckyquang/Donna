@@ -10,6 +10,7 @@ import {
   FolderOpen,
   Zap,
   LayoutDashboard,
+  BookOpen,
 } from "lucide-react";
 
 const links = [
@@ -19,6 +20,7 @@ const links = [
   { to: "/productivity", label: "Productivity", icon: Zap },
   { to: "/notifications", label: "Routines", icon: Bell },
   { to: "/docs", label: "Docs", icon: FileText },
+  { to: "/skills", label: "Skills", icon: BookOpen },
   { to: "/calendar", label: "Calendar", icon: Calendar },
   { to: "/mind-map", label: "Memory", icon: Network },
   { to: "/integrations", label: "Integrations", icon: Plug },

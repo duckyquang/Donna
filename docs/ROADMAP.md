@@ -110,5 +110,14 @@ Phase 5 (Voice) of the spec — done:
       normal streamed-reply path; "Speak replies aloud" toggle + voice picker in
       Settings; macOS mic entitlement (`NSMicrophoneUsageDescription`)
 
-Not yet built (Phase 6 of the spec):
-- [ ] Skills system (`skills_list` / `skill_view` / `skill_create` via suggestions)
+Phase 6 (Craft) of the spec — done:
+- [x] File-based skills catalog (`skills.rs`): `SKILL.md` + frontmatter, traversal-guarded
+      save/list/view, seeded example skill so the catalog is never empty
+- [x] `skills_list` / `skill_view` / `skill_create` registered as agent tools; every
+      system prompt carries a `## Available skills` name+description listing
+- [x] Accepting a `kind:"skill"` suggestion saves the skill; the nightly review can
+      propose a skill for a recurring recipe
+- [x] Skills page (`/skills`) — browse the catalog, view a skill's SKILL.md as
+      rendered Markdown
+
+All six spec phases (Foundation, Hands, Reach, Growth, Voice, Craft) are now shipped.

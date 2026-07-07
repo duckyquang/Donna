@@ -77,8 +77,11 @@ The spec's own build order has six phases; this roadmap entry covers Phase 1
       `donna-server` compiles), `docker-compose.yml` with a `cloudflared` tunnel
       sidecar for optional public HTTPS
 
-Not yet built (Phases 2–6 of the spec):
-- [ ] Agent loop, tool registry, trust engine (earned autonomy for outbound actions)
+Phase 2 (Hands) of the spec — done:
+- [x] Agent loop, tool registry, trust engine (earned autonomy for outbound actions)
+- [x] Approvals end-to-end (WS events, RPC arms, Chat UI cards, Settings policy editor)
+
+Not yet built (Phases 3–6 of the spec):
 - [ ] Two-way WhatsApp (webhook, allowlist, voice notes)
 - [ ] `USER.md` / `MEMORY.md`, FTS5 message search, events log, background review,
       suggestion queue, agentic `[SILENT]` routines

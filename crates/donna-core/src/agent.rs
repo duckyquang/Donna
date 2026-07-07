@@ -27,6 +27,15 @@ const TOOL_DISABLED_MSG: &str = "TOOL_DISABLED: repeated failures";
 const PENDING_APPROVAL_MSG: &str = "PENDING_APPROVAL: the user has been asked to approve \
 this action out-of-band. Do not retry or work around it; acknowledge and continue.";
 
+/// Appended to the shared chat system prompt for the agent (tool-calling) path only —
+/// plain chat via `providers::stream_chat` never sees this.
+const AGENT_SYSTEM_PROMPT_ADDENDUM: &str = "\n\n## Acting with tools\nYou have tools — use \
+them to act rather than describing what you would do. Read and write tools run \
+automatically. Outbound actions (messages to other people) may require the user's \
+approval: when a tool returns PENDING_APPROVAL, tell the user you've asked for their \
+approval and stop pursuing that action — never retry it or work around it. Never fabricate \
+tool results. Prefer checking real data over guessing.";
+
 /// Build the model-facing history: a system turn followed by each user/assistant
 /// message as a content-only `AgentTurn`. Pure; the loop's own tool-call/tool-result
 /// turns are appended later during iteration.
@@ -78,7 +87,8 @@ pub async fn run_agent_turn(
     on_event: &(dyn Fn(ChatEvent) + Send + Sync),
 ) -> Result<()> {
     let config = ops::load_config(db)?;
-    let system = ops::assemble_chat_system_prompt(db, &config, conversation_id).await?;
+    let mut system = ops::assemble_chat_system_prompt(db, &config, conversation_id).await?;
+    system.push_str(AGENT_SYSTEM_PROMPT_ADDENDUM);
     let mut turns = build_history_turns(&db.get_messages(conversation_id)?, system);
 
     let tools_json = tools::openai_tools_json();

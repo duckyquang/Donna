@@ -3,10 +3,26 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { Check, RefreshCw, Trash2 } from "lucide-react";
 import { PageShell } from "../components/PageShell";
 import { PROVIDERS, type ProviderId } from "../lib/models/providers";
-import { api, type AutonomyLevel } from "../lib/api";
+import { api, type AutonomyLevel, type TrustPolicy } from "../lib/api";
 import { serverConfig, setServerConfig, serverReachable } from "../lib/server";
 import { useConfig } from "../lib/useConfig";
 import { Button, Spinner } from "../components/ui";
+
+const TOOL_LABELS: Record<string, string> = {
+  slack_send_message: "Slack: send message",
+  discord_send_message: "Discord: send message",
+  telegram_send_message: "Telegram: send message",
+};
+
+function toolLabel(actionKind: string): string {
+  return (
+    TOOL_LABELS[actionKind] ??
+    actionKind
+      .split("_")
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ")
+  );
+}
 
 const AUTONOMY_OPTIONS: { value: AutonomyLevel; label: string; desc: string }[] = [
   {
@@ -45,6 +61,27 @@ export default function Settings() {
   const [serverToken, setServerToken] = useState(serverConfig().token);
   const [testResult, setTestResult] = useState<"ok" | "fail" | null>(null);
   const [testing, setTesting] = useState(false);
+
+  const [trustPolicies, setTrustPolicies] = useState<TrustPolicy[]>([]);
+  const [policyError, setPolicyError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.trustPoliciesList().then(setTrustPolicies).catch((e) => setPolicyError(String(e)));
+  }, []);
+
+  const setPolicyMode = async (actionKind: string, mode: "ask" | "auto") => {
+    const prev = trustPolicies;
+    setPolicyError(null);
+    setTrustPolicies((rows) =>
+      rows.map((r) => (r.actionKind === actionKind ? { ...r, mode } : r))
+    );
+    try {
+      await api.trustPolicySet(actionKind, mode);
+    } catch (e) {
+      setTrustPolicies(prev);
+      setPolicyError(String(e));
+    }
+  };
 
   const testConnection = async () => {
     setServerConfig({ url: serverUrl.trim(), token: serverToken.trim() });
@@ -338,6 +375,44 @@ export default function Settings() {
               </label>
             ))}
           </div>
+
+          {trustPolicies.length > 0 && (
+            <div className="mt-4 space-y-2 border-t border-white/10 pt-4">
+              <h3 className="text-sm font-medium text-gray-300">Outbound actions</h3>
+              <div className="space-y-2">
+                {trustPolicies.map((p) => (
+                  <div
+                    key={p.actionKind}
+                    className="flex items-center justify-between rounded-xl border border-white/10 p-3"
+                  >
+                    <span className="text-sm text-white">{toolLabel(p.actionKind)}</span>
+                    <div className="flex overflow-hidden rounded-lg border border-white/10">
+                      {(["ask", "auto"] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          onClick={() => setPolicyMode(p.actionKind, mode)}
+                          className={`px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
+                            p.mode === mode
+                              ? "bg-donna-accent/10 text-donna-accent"
+                              : "text-gray-400 hover:bg-white/5"
+                          }`}
+                        >
+                          {mode}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500">
+                Actions set to ask show an approval card before Donna acts. Donna can never
+                take these actions silently unless you set them to auto.
+              </p>
+              {policyError && (
+                <p className="text-xs text-red-400">{policyError}</p>
+              )}
+            </div>
+          )}
         </section>
 
         {status && (

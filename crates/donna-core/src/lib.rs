@@ -15,3 +15,4 @@ pub mod retrieval;
 pub mod scheduler;
 pub mod tools;
 pub mod secrets;
+pub mod trust;

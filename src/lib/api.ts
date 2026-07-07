@@ -138,7 +138,26 @@ export interface Message {
 export type ChatEvent =
   | { type: "token"; content: string }
   | { type: "done"; messageId: number }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "tool"; name: string; label: string; status: "running" | "done" | "error" }
+  | { type: "approval"; approval_id: number; summary: string; tool: string };
+
+export interface Approval {
+  id: number;
+  conversationId: number;
+  tool: string;
+  argsJson: string;
+  summary: string;
+  status: string;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+export interface TrustPolicy {
+  actionKind: string;
+  mode: "ask" | "auto";
+  updatedAt: string;
+}
 
 export interface KgNode {
   id: string;
@@ -440,6 +459,44 @@ interface RawMessage {
   created_at: string;
 }
 
+interface RawApproval {
+  id: number;
+  conversation_id: number;
+  tool: string;
+  args_json: string;
+  summary: string;
+  status: string;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+interface RawTrustPolicy {
+  action_kind: string;
+  mode: "ask" | "auto";
+  updated_at: string;
+}
+
+function toApproval(a: RawApproval): Approval {
+  return {
+    id: a.id,
+    conversationId: a.conversation_id,
+    tool: a.tool,
+    argsJson: a.args_json,
+    summary: a.summary,
+    status: a.status,
+    createdAt: a.created_at,
+    resolvedAt: a.resolved_at,
+  };
+}
+
+function toTrustPolicy(p: RawTrustPolicy): TrustPolicy {
+  return {
+    actionKind: p.action_kind,
+    mode: p.mode,
+    updatedAt: p.updated_at,
+  };
+}
+
 export const api = {
   async getConfig(): Promise<AppConfig> {
     const c = await invoke<RawConfig>("get_config");
@@ -539,6 +596,28 @@ export const api = {
         if (t === "done" || t === "error") resolve();
       });
     });
+  },
+
+  // --- Approvals & trust policies ---
+  async approvalsList(): Promise<Approval[]> {
+    const rows = await invoke<RawApproval[]>("approvals_list");
+    return rows.map(toApproval);
+  },
+  async approvalsPendingForConversation(conversationId: number): Promise<Approval[]> {
+    const rows = await invoke<RawApproval[]>("approvals_pending_for_conversation", {
+      conversationId,
+    });
+    return rows.map(toApproval);
+  },
+  approvalRespond(id: number, approve: boolean): Promise<string> {
+    return invoke("approval_respond", { id, approve });
+  },
+  async trustPoliciesList(): Promise<TrustPolicy[]> {
+    const rows = await invoke<RawTrustPolicy[]>("trust_policies_list");
+    return rows.map(toTrustPolicy);
+  },
+  trustPolicySet(actionKind: string, mode: "ask" | "auto"): Promise<void> {
+    return invoke("trust_policy_set", { actionKind, mode });
   },
 
   async kgGraph(): Promise<KgGraph> {

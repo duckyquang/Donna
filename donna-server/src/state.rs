@@ -34,6 +34,9 @@ pub fn test_state() -> AppState {
         uniq()
     ));
     std::fs::create_dir_all(&dir).unwrap();
+    // Belt-and-braces: keep server tests off the real OS keychain too. `init` is a
+    // set-once no-op if a store was already installed in this process.
+    donna_core::secrets::init(Box::new(donna_core::secrets::FileStore::new(dir.join("secrets.json"))));
     AppState {
         db: Arc::new(Db::open(&dir.join("t.sqlite")).unwrap()),
         token: "test-token".into(),

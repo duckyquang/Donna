@@ -304,6 +304,7 @@ mod tests {
     }
 
     fn test_db() -> Db {
+        crate::secrets::init_test_file_store();
         let dir = std::env::temp_dir().join(format!("donna-agent-{}-{}", std::process::id(), rand_suffix()));
         std::fs::create_dir_all(&dir).unwrap();
         Db::open(&dir.join("t.sqlite")).unwrap()

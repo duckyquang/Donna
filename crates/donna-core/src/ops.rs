@@ -1509,6 +1509,7 @@ mod tests {
     }
 
     fn test_db() -> Db {
+        crate::secrets::init_test_file_store();
         let dir = std::env::temp_dir().join(format!(
             "donna-ops-approvals-{}-{}",
             std::process::id(),

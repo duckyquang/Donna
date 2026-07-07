@@ -176,9 +176,32 @@ pub fn delete_api_key(provider: &str) -> Result<()> {
     delete_secret(&format!("api_key:{provider}"))
 }
 
+/// Route ALL secret reads/writes in this crate's test binary to a temp-dir
+/// FileStore. Call from every test helper that opens a Db — first caller wins
+/// the OnceLock, so as long as each test path goes through a helper, no test
+/// can touch the real OS keychain.
+#[cfg(test)]
+pub(crate) fn init_test_file_store() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let dir = std::env::temp_dir().join(format!("donna-test-secrets-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        init(Box::new(FileStore::new(dir.join("secrets.json"))));
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_store_is_isolated_from_keychain() {
+        init_test_file_store();
+        // ponytail: token:slack is never written by any test in this crate (grepped —
+        // only production integration code writes it), so it's a meaningful probe for
+        // "did we accidentally hit the real keychain" without racing other tests.
+        assert_eq!(get_secret("token:slack").unwrap(), None);
+    }
 
     #[test]
     fn file_store_roundtrip() {

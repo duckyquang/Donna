@@ -1104,6 +1104,7 @@ mod tests {
     use super::*;
 
     fn test_db() -> Db {
+        crate::secrets::init_test_file_store();
         let dir = std::env::temp_dir().join(format!(
             "donna-db-test-{}-{}",
             std::process::id(),

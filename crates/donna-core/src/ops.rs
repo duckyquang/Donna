@@ -1848,12 +1848,22 @@ pub fn suggestions_list(db: &Db, pending_only: bool) -> Result<Vec<Suggestion>> 
     db.list_suggestions(pending_only)
 }
 
+#[derive(Deserialize)]
+pub struct SkillSpec {
+    pub name: String,
+    pub description: String,
+    #[serde(default)]
+    pub category: String,
+    pub body: String,
+}
+
 /// Resolve a suggestion. Dismiss just marks it dismissed; accept marks it accepted and,
 /// for kind `"routine"`, acts on it by creating the routine from its `payload_json`
-/// (a `CreateRoutineInput`). Other kinds are marked accepted only — acting on them is
-/// manual/another phase's job. Idempotent: a non-pending suggestion returns "already
-/// resolved" without re-acting. For routine suggestions, the payload is parsed BEFORE
-/// `resolve_suggestion` runs, so a missing/malformed payload leaves the suggestion
+/// (a `CreateRoutineInput`); for kind `"skill"`, acts on it by saving the skill from its
+/// `payload_json` (a `SkillSpec`). Other kinds are marked accepted only — acting on them
+/// is manual/another phase's job. Idempotent: a non-pending suggestion returns "already
+/// resolved" without re-acting. For routine/skill suggestions, the payload is parsed
+/// BEFORE `resolve_suggestion` runs, so a missing/malformed payload leaves the suggestion
 /// pending (retryable) with a visible failure notification instead of silently
 /// consuming it.
 pub async fn suggestion_respond(db: &Db, id: i64, accept: bool) -> Result<String> {
@@ -1897,9 +1907,41 @@ pub async fn suggestion_respond(db: &Db, id: i64, accept: bool) -> Result<String
         None
     };
 
+    let parsed_skill = if s.kind == "skill" {
+        match s.payload_json.as_deref().map(serde_json::from_str::<SkillSpec>) {
+            Some(Ok(spec)) => Some(spec),
+            Some(Err(e)) => {
+                db.insert_notification(
+                    "Suggestion couldn't be applied",
+                    &format!("{}: invalid skill details", s.title),
+                    None,
+                    None,
+                )?;
+                return Ok(format!("failed: {e}"));
+            }
+            None => {
+                db.insert_notification(
+                    "Suggestion couldn't be applied",
+                    &format!("{}: invalid skill details", s.title),
+                    None,
+                    None,
+                )?;
+                return Ok("failed: missing skill payload".into());
+            }
+        }
+    } else {
+        None
+    };
+
     db.resolve_suggestion(id, "accepted")?;
     if let Some(input) = parsed_routine {
         create_routine(db, input)?;
+    }
+    if let Some(spec) = parsed_skill {
+        let category = if spec.category.is_empty() { "general" } else { &spec.category };
+        skills::save_skill(&spec.name, &spec.description, category, &spec.body)?;
+        db.insert_notification("Skill saved", &spec.name, None, None)?;
+        return Ok("accepted".into());
     }
     db.insert_notification("Suggestion accepted", &s.title, None, None)?;
     Ok("accepted".into())
@@ -2191,5 +2233,26 @@ mod tests {
         assert_eq!(second, "already resolved");
         let count = db.list_routines().unwrap().iter().filter(|r| r.name == "Standup prep").count();
         assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn suggestion_accept_skill_creates_it() {
+        let db = test_db();
+        let _g = crate::skills::tests::skills_test_guard();
+        let payload = serde_json::json!({"name":"Trip Planner","description":"Plan a trip","category":"travel","body":"1. dates\n2. book"}).to_string();
+        let id = db.insert_suggestion("skill","Save Trip Planner skill","noticed you plan trips a lot",Some(&payload),"skill:trip-planner").unwrap().unwrap();
+        let out = suggestion_respond(&db, id, true).await.unwrap();
+        assert_eq!(out, "accepted");
+        assert!(crate::skills::list_skills().unwrap().iter().any(|s| s.slug == "trip-planner"));
+    }
+
+    #[tokio::test]
+    async fn suggestion_accept_malformed_skill_stays_pending() {
+        let db = test_db();
+        let _g = crate::skills::tests::skills_test_guard();
+        let id = db.insert_suggestion("skill","bad","x",Some("{not json"),"skill:bad").unwrap().unwrap();
+        let out = suggestion_respond(&db, id, true).await.unwrap();
+        assert!(out.starts_with("failed"));
+        assert_eq!(db.get_suggestion(id).unwrap().unwrap().status, "pending");
     }
 }

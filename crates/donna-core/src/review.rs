@@ -71,7 +71,11 @@ code fences. Shape:
     {\"kind\": \"routine\", \"title\": \"...\", \"body\": \"why this helps (1-2 sentences)\",
      \"dedup_key\": \"routine:<stable-slug>\",
      \"payload\": {\"name\": \"...\", \"schedule_type\": \"daily\"|\"weekly\",
-                   \"hour\": 8, \"minute\": 0, \"day_of_week\": 0, \"prompt\": \"...\"}}
+                   \"hour\": 8, \"minute\": 0, \"day_of_week\": 0, \"prompt\": \"...\"}},
+    {\"kind\": \"skill\", \"title\": \"...\", \"body\": \"why this helps (1-2 sentences)\",
+     \"dedup_key\": \"skill:<stable-slug>\",
+     \"payload\": {\"name\": \"...\", \"description\": \"...\", \"category\": \"...\",
+                   \"body\": \"1. step one\\n2. step two\"}}
   ]
 }
 
@@ -85,6 +89,10 @@ Prefer `replace` to consolidate over piling on `add`s. Use `remove` for stale li
 distinct need, max 2 total. Reuse a STABLE dedup_key like \"routine:standup\" so a dismissed \
 suggestion never comes back. schedule_type is \"daily\" or \"weekly\"; for weekly set \
 day_of_week (0=Monday). hour/minute are 24h local time. Omit a field only if truly N/A.
+- Propose a skill (kind:'skill') when the SAME multi-step recipe recurs across the \
+events/messages and isn't already a saved skill; payload = {name, description, category, \
+body}; dedup_key = 'skill:<kebab-name>'. Be conservative — only a genuinely repeated \
+recipe, not a one-off.
 - When nothing is worth doing, return {\"memory\": [], \"suggestions\": []}. That is expected.";
 
 /// Run one nightly review pass. Never errors on \"nothing configured\" — returns a zero
@@ -312,5 +320,46 @@ mod tests {
         assert_eq!(plan.suggestions.len(), 1);
         assert_eq!(plan.suggestions[0].kind, "routine");
         assert_eq!(plan.suggestions[0].dedup_key, "routine:standup");
+    }
+
+    #[test]
+    fn parse_suggestion_preserves_skill_kind_and_payload() {
+        let out = r#"{"memory":[],"suggestions":[
+            {"kind":"skill","title":"Save Trip Planner skill","body":"recurring recipe",
+             "dedup_key":"skill:trip-planner",
+             "payload":{"name":"Trip Planner","description":"Plan a trip","category":"travel","body":"1. dates\n2. book"}}
+        ]}"#;
+        let plan = parse_review_json(out);
+        assert_eq!(plan.suggestions.len(), 1);
+        assert_eq!(plan.suggestions[0].kind, "skill");
+        assert_eq!(plan.suggestions[0].payload["name"], "Trip Planner");
+    }
+
+    #[test]
+    fn apply_plan_round_trips_skill_suggestion_into_db() {
+        let dir = std::env::temp_dir().join(format!(
+            "donna-review-{}-{}",
+            std::process::id(),
+            crate::db::unique_test_suffix()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = Db::open(&dir.join("t.sqlite")).unwrap();
+
+        let plan = ReviewPlan {
+            memory: vec![],
+            suggestions: vec![SuggestionSpec {
+                kind: "skill".into(),
+                title: "Save Trip Planner skill".into(),
+                body: "recurring recipe".into(),
+                dedup_key: "skill:trip-planner".into(),
+                payload: serde_json::json!({"name":"Trip Planner","description":"Plan a trip","category":"travel","body":"1. dates\n2. book"}),
+            }],
+        };
+        let outcome = apply_plan(&db, plan);
+        assert_eq!(outcome.suggestions_filed, 1);
+        let saved = db.list_suggestions(true).unwrap();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].kind, "skill");
+        assert!(saved[0].payload_json.as_deref().unwrap().contains("Trip Planner"));
     }
 }

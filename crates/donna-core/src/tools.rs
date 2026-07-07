@@ -258,6 +258,24 @@ pub fn all() -> Vec<ToolDef> {
             risk: Risk::Write,
         },
         ToolDef {
+            name: "memory_update",
+            description: "Update your durable memory about the user. USER.md = stable \
+                identity/preferences (cap 1500 chars); MEMORY.md = active threads/conventions \
+                (cap 2500 chars). 'add' appends a line (errors if full — then consolidate), \
+                'replace' rewrites the whole file, 'remove' deletes lines containing the text. \
+                Keep entries terse.",
+            params: json!({
+                "type": "object",
+                "properties": {
+                    "file": {"type": "string", "enum": ["user", "memory"], "description": "Which file: 'user' (USER.md) or 'memory' (MEMORY.md)."},
+                    "action": {"type": "string", "enum": ["add", "replace", "remove"], "description": "'add' appends a line, 'replace' rewrites the whole file, 'remove' deletes lines containing text."},
+                    "text": {"type": "string", "description": "For 'add'/'remove': a line or substring. For 'replace': the full new file body."}
+                },
+                "required": ["file", "action", "text"]
+            }),
+            risk: Risk::Write,
+        },
+        ToolDef {
             name: "gmail_create_draft",
             description: "Create a Gmail draft (does NOT send it). Returns the draft id. Use to \
                 prepare an email for the user to review and send.",
@@ -601,6 +619,12 @@ pub async fn execute(db: &Db, name: &str, args: &Value) -> Result<String> {
             let a: A = parse(name, args)?;
             ok(ops::kg_save_node(db, a.folder, a.label, a.note, a.node_type, None, None).await?)
         }
+        "memory_update" => {
+            #[derive(Deserialize)]
+            struct A { file: String, action: String, text: String }
+            let a: A = parse(name, args)?;
+            ok(ops::memory_update(db, a.file, a.action, a.text).await?)
+        }
         "gmail_create_draft" => {
             #[derive(Deserialize)]
             struct A { to: String, subject: String, body: String }
@@ -748,7 +772,26 @@ mod tests {
     // (Read 12 + Donna-reads 5 + Write 11 + Outbound 3). The enumeration is the precise,
     // actionable spec; "28" is an unreconciled round number repeated in the headline.
     // Implementing all 31 named tools rather than arbitrarily dropping 3 the plan lists.
-    const TOOL_COUNT: usize = 31;
+    // Phase 4 Task 1 adds `memory_update` (Write), bringing the total to 32.
+    const TOOL_COUNT: usize = 32;
+
+    /// Point DONNA_KB_DIR at a fresh temp dir and seed it (memory_update needs a KB root).
+    fn temp_kb() -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "donna-tools-kb-{}-{}",
+            std::process::id(),
+            rand_suffix()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("DONNA_KB_DIR", &dir);
+        crate::knowledge::ensure_root().unwrap();
+        dir
+    }
+
+    fn rand_suffix() -> u64 {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64
+    }
 
     #[tokio::test]
     async fn registry_names_unique_and_schemas_valid() {
@@ -771,6 +814,15 @@ mod tests {
         assert!(out.contains("\"T\""));
         let err = execute(&db, "no_such_tool", &serde_json::json!({})).await.unwrap_err();
         assert!(err.to_string().contains("unknown tool"));
+    }
+
+    #[tokio::test]
+    async fn memory_update_tool_registered_and_dispatches() {
+        let db = test_db();
+        let _root = temp_kb();
+        let out = execute(&db, "memory_update", &serde_json::json!({"file":"user","action":"add","text":"Likes tea"})).await.unwrap();
+        assert!(out.contains("Likes tea"));
+        assert_eq!(all().len(), 32);
     }
 
     #[test]

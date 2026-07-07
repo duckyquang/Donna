@@ -676,6 +676,126 @@ pub fn basics_status() -> Result<Vec<BasicFieldStatus>> {
         .collect())
 }
 
+// --- Capped memory files (USER.md / MEMORY.md) ------------------------------
+
+/// Char cap for USER.md (stable identity/preferences).
+pub const USER_MD_CAP: usize = 1500;
+/// Char cap for MEMORY.md (active threads/conventions).
+pub const MEMORY_MD_CAP: usize = 2500;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemoryFile {
+    User,
+    Memory,
+}
+
+impl MemoryFile {
+    fn filename(self) -> &'static str {
+        match self {
+            MemoryFile::User => "USER.md",
+            MemoryFile::Memory => "MEMORY.md",
+        }
+    }
+
+    fn cap(self) -> usize {
+        match self {
+            MemoryFile::User => USER_MD_CAP,
+            MemoryFile::Memory => MEMORY_MD_CAP,
+        }
+    }
+
+    fn heading(self) -> &'static str {
+        match self {
+            MemoryFile::User => "## About you",
+            MemoryFile::Memory => "## Working memory",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemoryAction {
+    Add,
+    Replace,
+    Remove,
+}
+
+fn cap_check(body: &str, cap: usize) -> bool {
+    body.chars().count() <= cap
+}
+
+/// Read a memory file's contents, or "" if it does not exist yet.
+pub fn read_memory_file(which: MemoryFile) -> Result<String> {
+    let path = kb_root().join(which.filename());
+    match std::fs::read_to_string(&path) {
+        Ok(s) => Ok(s),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(io(e)),
+    }
+}
+
+fn write_memory_file(which: MemoryFile, body: &str) -> Result<()> {
+    std::fs::create_dir_all(kb_root()).map_err(io)?;
+    std::fs::write(kb_root().join(which.filename()), body).map_err(io)
+}
+
+/// The `## About you` / `## Working memory` block injected into the system prompt.
+/// A file's block is omitted when that file is empty; "" when both are empty.
+pub fn memory_prompt_section() -> Result<String> {
+    let mut blocks = Vec::new();
+    for which in [MemoryFile::User, MemoryFile::Memory] {
+        let body = read_memory_file(which)?;
+        if !body.trim().is_empty() {
+            blocks.push(format!("{}\n{}", which.heading(), body.trim()));
+        }
+    }
+    Ok(blocks.join("\n\n"))
+}
+
+/// Apply an update to a memory file. `Add` appends `text` as a new line (errors
+/// `MEMORY_FULL: …` with the current contents if the result would exceed the cap so the
+/// model can consolidate instead). `Replace` rewrites the whole body to `text` (errors if
+/// over cap). `Remove` deletes any line containing `text` as a substring. Returns the new
+/// contents.
+pub fn apply_memory_update(which: MemoryFile, action: MemoryAction, text: &str) -> Result<String> {
+    let current = read_memory_file(which)?;
+    let cap = which.cap();
+
+    let new_body = match action {
+        MemoryAction::Add => {
+            let candidate = if current.trim().is_empty() {
+                text.to_string()
+            } else {
+                format!("{}\n{}", current.trim_end_matches('\n'), text)
+            };
+            if !cap_check(&candidate, cap) {
+                return Err(Error::Provider(format!(
+                    "MEMORY_FULL: {} is at cap ({cap} chars). Consolidate before adding more.\n\
+                    Current contents:\n{current}",
+                    which.filename()
+                )));
+            }
+            candidate
+        }
+        MemoryAction::Replace => {
+            if !cap_check(text, cap) {
+                return Err(Error::Provider(format!(
+                    "MEMORY_FULL: replacement body for {} exceeds cap ({cap} chars).",
+                    which.filename()
+                )));
+            }
+            text.to_string()
+        }
+        MemoryAction::Remove => current
+            .lines()
+            .filter(|line| !line.contains(text))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    };
+
+    write_memory_file(which, &new_body)?;
+    Ok(new_body)
+}
+
 /// Human-readable checklist of core identity facts Donna has vs still needs to ask about.
 pub fn basics_checklist_for_prompt() -> Result<String> {
     let nodes = graph()?.nodes;
@@ -706,4 +826,70 @@ pub fn basics_checklist_for_prompt() -> Result<String> {
         out.push_str(&known.join("\n"));
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ponytail: DONNA_KB_DIR is a process-wide env var; the mutex keeps tests that set it
+    // from racing each other across threads. Guard is leaked so its lifetime is 'static.
+    fn kb_env_lock() -> &'static std::sync::Mutex<()> {
+        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+        LOCK.get_or_init(|| std::sync::Mutex::new(()))
+    }
+
+    /// Holds the process-wide env lock (released on drop) plus the temp dir path.
+    #[must_use]
+    #[allow(dead_code)] // .1 (dir path) kept for debugging; guard (.0) is the load-bearing field
+    struct TempKb(std::sync::MutexGuard<'static, ()>, PathBuf);
+
+    /// Point DONNA_KB_DIR at a fresh temp dir and seed it. Holds a process-wide lock for
+    /// the returned guard's lifetime so concurrent tests don't race on the env var.
+    fn temp_kb() -> TempKb {
+        let guard = kb_env_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!(
+            "donna-kb-{}-{}",
+            std::process::id(),
+            rand_suffix()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("DONNA_KB_DIR", &dir);
+        ensure_root().unwrap();
+        TempKb(guard, dir)
+    }
+
+    fn rand_suffix() -> u64 {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64
+    }
+
+    #[test]
+    fn memory_add_until_full_then_errors() {
+        let _root = temp_kb();
+        assert_eq!(read_memory_file(MemoryFile::User).unwrap(), "");
+        apply_memory_update(MemoryFile::User, MemoryAction::Add, "Name: Buno").unwrap();
+        assert!(read_memory_file(MemoryFile::User).unwrap().contains("Name: Buno"));
+        // fill past the 1500 cap
+        let big = "x".repeat(1600);
+        let err = apply_memory_update(MemoryFile::User, MemoryAction::Add, &big).unwrap_err();
+        assert!(err.to_string().contains("MEMORY_FULL"));
+        // replace to shrink works even near cap
+        apply_memory_update(MemoryFile::User, MemoryAction::Replace, "Name: B").unwrap();
+        assert_eq!(read_memory_file(MemoryFile::User).unwrap().trim(), "Name: B");
+        // remove
+        apply_memory_update(MemoryFile::User, MemoryAction::Remove, "Name: B").unwrap();
+        assert_eq!(read_memory_file(MemoryFile::User).unwrap().trim(), "");
+    }
+
+    #[test]
+    fn memory_prompt_section_shape() {
+        let _root = temp_kb();
+        assert_eq!(memory_prompt_section().unwrap(), "");
+        apply_memory_update(MemoryFile::User, MemoryAction::Add, "Prefers concise replies").unwrap();
+        let s = memory_prompt_section().unwrap();
+        assert!(s.contains("## About you"));
+        assert!(s.contains("Prefers concise replies"));
+        assert!(!s.contains("## Working memory")); // MEMORY.md still empty → omitted
+    }
 }

@@ -60,10 +60,18 @@ fn build_system_prompt(
     let basics = knowledge::basics_checklist_for_prompt()?;
     let known = knowledge::summary_for_prompt()?;
     let setup = build_setup_context(config)?;
+    let memory = knowledge::memory_prompt_section()?;
 
     let mut prompt = format!(
-        "{DONNA_SYSTEM_PROMPT}\n\n## Basics checklist\n{basics}\n\n## What Donna knows about this user\n{known}\n\n{setup}"
+        "{DONNA_SYSTEM_PROMPT}\n\n## Basics checklist\n{basics}\n\n"
     );
+    if !memory.is_empty() {
+        prompt.push_str(&memory);
+        prompt.push_str("\n\n");
+    }
+    prompt.push_str(&format!(
+        "## What Donna knows about this user\n{known}\n\n{setup}"
+    ));
 
     if let Some(ctx) = retrieval_ctx {
         if !ctx.is_empty() {
@@ -572,6 +580,28 @@ pub async fn kg_save_node(
         .await;
     }
     Ok(to_graph_node(node))
+}
+
+/// Update USER.md or MEMORY.md. `db` is unused today but kept for signature parity with
+/// the other ops. Bad `file`/`action` values are rejected before touching disk.
+pub async fn memory_update(
+    _db: &Db,
+    file: String,
+    action: String,
+    text: String,
+) -> Result<String> {
+    let which = match file.as_str() {
+        "user" => knowledge::MemoryFile::User,
+        "memory" => knowledge::MemoryFile::Memory,
+        other => return Err(Error::Provider(format!("unknown memory file: {other}"))),
+    };
+    let action = match action.as_str() {
+        "add" => knowledge::MemoryAction::Add,
+        "replace" => knowledge::MemoryAction::Replace,
+        "remove" => knowledge::MemoryAction::Remove,
+        other => return Err(Error::Provider(format!("unknown memory action: {other}"))),
+    };
+    knowledge::apply_memory_update(which, action, &text)
 }
 
 pub fn kg_delete_node(folder: Vec<String>, id: String) -> Result<()> {

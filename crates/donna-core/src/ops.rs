@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::db::{Conversation, Db, Doc, Message, Notification, Routine};
+use crate::db::{Approval, Conversation, Db, Doc, Message, Notification, Routine, TrustPolicy};
 use crate::embeddings;
 use crate::error::{Error, Result};
 use crate::integrations::{self, discord, github, google, linear, notion, slack, telegram, whatsapp};
@@ -14,6 +14,7 @@ use crate::knowledge;
 use crate::providers::{self, ChatTurn};
 use crate::retrieval;
 use crate::secrets;
+use crate::tools::{self, Risk};
 
 const DONNA_SYSTEM_PROMPT: &str = "You are Donna, a warm, sharp, and proactive personal \
 assistant who is private and runs locally on the user's own device. You learn about the \
@@ -878,6 +879,121 @@ pub fn mark_notification_read(db: &Db, id: i64) -> Result<()> {
     db.mark_notification_read(id)
 }
 
+// --- Approvals & trust policies ----------------------------------------------
+
+pub fn approvals_list(db: &Db) -> Result<Vec<Approval>> {
+    db.list_approvals(false) // already newest-first (ORDER BY id DESC)
+}
+
+pub fn approvals_pending_for_conversation(db: &Db, conversation_id: i64) -> Result<Vec<Approval>> {
+    db.list_pending_approvals_for_conversation(conversation_id)
+}
+
+/// One row per registry Outbound tool, so the Settings editor always shows the full
+/// surface — not just the tools someone has already edited a policy for.
+pub fn trust_policies_list(db: &Db) -> Result<Vec<TrustPolicy>> {
+    let saved = db.list_trust_policies()?;
+    tools::all()
+        .into_iter()
+        .filter(|t| t.risk == Risk::Outbound)
+        .map(|t| {
+            let existing = saved.iter().find(|p| p.action_kind == t.name);
+            Ok(TrustPolicy {
+                action_kind: t.name.to_string(),
+                mode: existing.map(|p| p.mode.clone()).unwrap_or_else(|| "ask".into()),
+                updated_at: existing.map(|p| p.updated_at.clone()).unwrap_or_default(),
+            })
+        })
+        .collect()
+}
+
+pub fn trust_policy_set(db: &Db, action_kind: String, mode: String) -> Result<()> {
+    if tools::risk_of(&action_kind) != Some(Risk::Outbound) {
+        return Err(Error::Provider(format!(
+            "'{action_kind}' is not an outbound tool with a trust policy"
+        )));
+    }
+    if mode != "ask" && mode != "auto" {
+        return Err(Error::Provider(format!(
+            "mode must be 'ask' or 'auto', got '{mode}'"
+        )));
+    }
+    db.set_trust_policy(&action_kind, &mode)
+}
+
+/// Resolve a pending approval. Idempotent: responding to an already-resolved approval
+/// returns "already resolved" instead of erroring or re-executing.
+///
+/// - Reject: mark rejected, notify, done.
+/// - Approve: mark approved, then actually run the tool. Success gets a one-shot warm
+///   confirmation message from the model (best-effort — falls back to a plain string);
+///   failure gets the error persisted as an assistant message. Either way this returns
+///   `Ok` — the execution outcome is a result, not an RPC-level error.
+// ponytail: one-shot confirmation, not a loop re-entry; full resume can come later if it
+// ever matters.
+pub async fn approval_respond(db: &Db, id: i64, approve: bool) -> Result<String> {
+    let a = db
+        .get_approval(id)?
+        .ok_or_else(|| Error::Provider(format!("approval {id} not found")))?;
+
+    if a.status != "pending" {
+        return Ok("already resolved".into());
+    }
+
+    if !approve {
+        db.resolve_approval(id, "rejected")?;
+        db.insert_notification("Action cancelled", &a.summary, None, None)?;
+        return Ok("rejected".into());
+    }
+
+    db.resolve_approval(id, "approved")?;
+    let args: serde_json::Value = serde_json::from_str(&a.args_json)?;
+
+    match tools::execute(db, &a.tool, &args).await {
+        Ok(result) => {
+            let confirmation = confirm_action_message(db, &a.summary, &result).await;
+            db.add_message(a.conversation_id, "assistant", &confirmation)?;
+            db.insert_notification("Done", &a.summary, None, None)?;
+            Ok("approved".into())
+        }
+        Err(err) => {
+            let msg = format!("I tried to {} but it failed: {err}", a.summary);
+            db.add_message(a.conversation_id, "assistant", &msg)?;
+            db.insert_notification("Failed", &a.summary, None, None)?;
+            Ok(format!("failed: {err}"))
+        }
+    }
+}
+
+/// Best-effort one-shot confirmation for a just-executed approved action. Falls back to a
+/// plain string if no model is configured or the completion call errors.
+async fn confirm_action_message(db: &Db, summary: &str, result: &str) -> String {
+    let fallback = format!("Done: {summary}");
+    let config = match load_config(db) {
+        Ok(c) => c,
+        Err(_) => return fallback,
+    };
+    if config.model.is_empty() {
+        return fallback;
+    }
+    let api_key = secrets::get_api_key(&config.provider).ok().flatten();
+    let turns = vec![
+        ChatTurn {
+            role: "system".into(),
+            content: "You are Donna. The user approved this action and it has now been \
+                      executed. Write one short, warm confirmation message (1-2 sentences)."
+                .into(),
+        },
+        ChatTurn {
+            role: "user".into(),
+            content: format!("Action: {summary}\nResult: {result}"),
+        },
+    ];
+    providers::complete(&config.provider, &config.model, api_key, &config.ollama_host, &turns)
+        .await
+        .unwrap_or(fallback)
+}
+
 // --- Docs -------------------------------------------------------------------
 
 pub fn list_docs(db: &Db) -> Result<Vec<Doc>> {
@@ -1390,5 +1506,95 @@ mod tests {
 
         delete_conversation(&db, id).unwrap();
         assert!(!list_conversations(&db).unwrap().iter().any(|c| c.id == id));
+    }
+
+    fn test_db() -> Db {
+        let dir = std::env::temp_dir().join(format!(
+            "donna-ops-approvals-{}-{}",
+            std::process::id(),
+            rand_suffix()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        Db::open(&dir.join("t.sqlite")).unwrap()
+    }
+
+    fn rand_suffix() -> u64 {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64
+    }
+
+    #[tokio::test]
+    async fn approval_respond_reject_path() {
+        let db = test_db();
+        let a = crate::trust::request_approval(
+            &db,
+            1,
+            "slack_send_message",
+            &serde_json::json!({"channel":"#g","text":"x"}),
+        )
+        .unwrap();
+        let out = approval_respond(&db, a.id, false).await.unwrap();
+        assert_eq!(out, "rejected");
+        assert_eq!(db.get_approval(a.id).unwrap().unwrap().status, "rejected");
+    }
+
+    #[tokio::test]
+    async fn approval_respond_is_idempotent() {
+        let db = test_db();
+        let a = crate::trust::request_approval(
+            &db,
+            1,
+            "slack_send_message",
+            &serde_json::json!({"channel":"#g","text":"x"}),
+        )
+        .unwrap();
+        let first = approval_respond(&db, a.id, false).await.unwrap();
+        assert_eq!(first, "rejected");
+        let second = approval_respond(&db, a.id, false).await.unwrap();
+        assert_eq!(second, "already resolved");
+    }
+
+    #[tokio::test]
+    async fn approval_respond_approve_path_executes_and_reports_failure() {
+        // slack_send_message with no token configured fails fast in get_token() before
+        // any network call, so this exercises resolve + execute + persist + notification
+        // without hitting the network.
+        let db = test_db();
+        let conv_id = create_conversation(&db, "New conversation".into()).unwrap();
+        let a = crate::trust::request_approval(
+            &db,
+            conv_id,
+            "slack_send_message",
+            &serde_json::json!({"channel":"#g","text":"x"}),
+        )
+        .unwrap();
+        let out = approval_respond(&db, a.id, true).await.unwrap();
+        assert!(out.starts_with("failed:"), "expected failed: outcome, got {out}");
+        assert_eq!(db.get_approval(a.id).unwrap().unwrap().status, "approved");
+        let messages = db.get_messages(conv_id).unwrap();
+        assert!(messages.iter().any(|m| m.role == "assistant"));
+    }
+
+    #[test]
+    fn trust_policies_list_covers_all_outbound() {
+        let db = test_db();
+        let rows = trust_policies_list(&db).unwrap();
+        assert_eq!(rows.len(), 3); // slack, telegram, whatsapp
+        assert!(rows.iter().all(|p| p.mode == "ask"));
+
+        trust_policy_set(&db, "slack_send_message".into(), "auto".into()).unwrap();
+        let rows = trust_policies_list(&db).unwrap();
+        assert_eq!(
+            rows.iter().find(|p| p.action_kind == "slack_send_message").unwrap().mode,
+            "auto"
+        );
+    }
+
+    #[test]
+    fn trust_policy_set_rejects_non_outbound_and_unknown_tools() {
+        let db = test_db();
+        assert!(trust_policy_set(&db, "list_docs".into(), "auto".into()).is_err());
+        assert!(trust_policy_set(&db, "nonexistent".into(), "auto".into()).is_err());
+        assert!(trust_policy_set(&db, "slack_send_message".into(), "bogus".into()).is_err());
     }
 }

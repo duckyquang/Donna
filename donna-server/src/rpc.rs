@@ -123,6 +123,13 @@ async fn dispatch(st: &AppState, cmd: &str, a: &Value) -> Result<Value, String> 
         "list_notifications" => ok!(ops::list_notifications(db)),
         "mark_notification_read" => ok!(ops::mark_notification_read(db, arg(&a, "id")?)),
 
+        // --- Approvals & trust policies ---
+        "approvals_list" => ok!(ops::approvals_list(db)),
+        "approvals_pending_for_conversation" => ok!(ops::approvals_pending_for_conversation(db, arg(&a, "conversationId")?)),
+        "approval_respond" => ok!(ops::approval_respond(db, arg(&a, "id")?, arg(&a, "approve")?).await),
+        "trust_policies_list" => ok!(ops::trust_policies_list(db)),
+        "trust_policy_set" => ok!(ops::trust_policy_set(db, arg(&a, "actionKind")?, arg(&a, "mode")?)),
+
         // --- Docs ---
         "list_docs" => ok!(ops::list_docs(db)),
         "get_doc" => ok!(ops::get_doc(db, arg(&a, "id")?)),

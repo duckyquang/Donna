@@ -49,6 +49,40 @@ async fn rpc_conversation_roundtrip() {
 }
 
 #[tokio::test]
+async fn rpc_trust_policies_roundtrip() {
+    let app = donna_server::build_app(donna_server::test_state());
+
+    let res = app.clone().oneshot(Request::post("/rpc/trust_policy_set")
+        .header("authorization", "Bearer test-token")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"actionKind":"slack_send_message","mode":"auto"}"#)).unwrap()).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let res = app.clone().oneshot(Request::post("/rpc/trust_policies_list")
+        .header("authorization", "Bearer test-token")
+        .header("content-type", "application/json")
+        .body(Body::from("{}")).unwrap()).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(res.into_body()).await.unwrap().to_bytes();
+    let rows: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let slack_mode = rows
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["action_kind"] == "slack_send_message")
+        .and_then(|r| r["mode"].as_str())
+        .unwrap();
+    assert_eq!(slack_mode, "auto");
+
+    // Invalid tool -> 400.
+    let res = app.oneshot(Request::post("/rpc/trust_policy_set")
+        .header("authorization", "Bearer test-token")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"actionKind":"not_a_tool","mode":"auto"}"#)).unwrap()).await.unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn ws_token_query_rejects_prefix_and_wrong_param_name() {
     let app = donna_server::build_app(donna_server::test_state());
 

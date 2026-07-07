@@ -2,6 +2,7 @@
 //! Consumed by the Tauri desktop app and donna-server.
 
 pub mod agent;
+pub mod audio;
 pub mod bundle;
 pub mod db;
 pub mod docs;

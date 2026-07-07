@@ -829,12 +829,12 @@ pub fn basics_checklist_for_prompt() -> Result<String> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     // ponytail: DONNA_KB_DIR is a process-wide env var; the mutex keeps tests that set it
-    // from racing each other across threads. Guard is leaked so its lifetime is 'static.
-    fn kb_env_lock() -> &'static std::sync::Mutex<()> {
+    // (in this file and in tools.rs) from racing each other across threads.
+    pub(crate) fn kb_env_lock() -> &'static std::sync::Mutex<()> {
         static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
         LOCK.get_or_init(|| std::sync::Mutex::new(()))
     }
@@ -842,11 +842,12 @@ mod tests {
     /// Holds the process-wide env lock (released on drop) plus the temp dir path.
     #[must_use]
     #[allow(dead_code)] // .1 (dir path) kept for debugging; guard (.0) is the load-bearing field
-    struct TempKb(std::sync::MutexGuard<'static, ()>, PathBuf);
+    pub(crate) struct TempKb(std::sync::MutexGuard<'static, ()>, PathBuf);
 
     /// Point DONNA_KB_DIR at a fresh temp dir and seed it. Holds a process-wide lock for
-    /// the returned guard's lifetime so concurrent tests don't race on the env var.
-    fn temp_kb() -> TempKb {
+    /// the returned guard's lifetime so concurrent tests (crate-wide) don't race on the env
+    /// var. Every test in this crate that sets DONNA_KB_DIR must go through this helper.
+    pub(crate) fn temp_kb() -> TempKb {
         let guard = kb_env_lock().lock().unwrap_or_else(|e| e.into_inner());
         let dir = std::env::temp_dir().join(format!(
             "donna-kb-{}-{}",
@@ -859,7 +860,7 @@ mod tests {
         TempKb(guard, dir)
     }
 
-    fn rand_suffix() -> u64 {
+    pub(crate) fn rand_suffix() -> u64 {
         use std::time::{SystemTime, UNIX_EPOCH};
         SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64
     }

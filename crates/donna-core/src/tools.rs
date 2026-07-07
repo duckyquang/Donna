@@ -775,24 +775,6 @@ mod tests {
     // Phase 4 Task 1 adds `memory_update` (Write), bringing the total to 32.
     const TOOL_COUNT: usize = 32;
 
-    /// Point DONNA_KB_DIR at a fresh temp dir and seed it (memory_update needs a KB root).
-    fn temp_kb() -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "donna-tools-kb-{}-{}",
-            std::process::id(),
-            rand_suffix()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::env::set_var("DONNA_KB_DIR", &dir);
-        crate::knowledge::ensure_root().unwrap();
-        dir
-    }
-
-    fn rand_suffix() -> u64 {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64
-    }
-
     #[tokio::test]
     async fn registry_names_unique_and_schemas_valid() {
         let defs = all();
@@ -819,7 +801,7 @@ mod tests {
     #[tokio::test]
     async fn memory_update_tool_registered_and_dispatches() {
         let db = test_db();
-        let _root = temp_kb();
+        let _kb = crate::knowledge::tests::temp_kb();
         let out = execute(&db, "memory_update", &serde_json::json!({"file":"user","action":"add","text":"Likes tea"})).await.unwrap();
         assert!(out.contains("Likes tea"));
         assert_eq!(all().len(), 32);

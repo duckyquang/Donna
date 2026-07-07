@@ -221,7 +221,7 @@ pub fn skills_prompt_section() -> Result<String> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     // ponytail: DONNA_SKILLS_DIR is process-wide, same hazard as DONNA_KB_DIR in
@@ -233,11 +233,11 @@ mod tests {
 
     #[must_use]
     #[allow(dead_code)] // .1 (dir path) kept for debugging; guard (.0) is load-bearing
-    struct TempSkills(std::sync::MutexGuard<'static, ()>, PathBuf);
+    pub(crate) struct TempSkills(std::sync::MutexGuard<'static, ()>, PathBuf);
 
     /// Point DONNA_SKILLS_DIR at a fresh temp dir and seed it. Holds a process-wide lock
     /// for the returned guard's lifetime so concurrent tests don't race on the env var.
-    fn skills_test_guard() -> TempSkills {
+    pub(crate) fn skills_test_guard() -> TempSkills {
         let guard = skills_env_lock().lock().unwrap_or_else(|e| e.into_inner());
         let dir = std::env::temp_dir().join(format!(
             "donna-skills-{}-{}",

@@ -21,6 +21,7 @@ use crate::error::{Error, Result};
 use crate::integrations::{google, news, weather};
 use crate::ops;
 use crate::retrieval;
+use crate::skills;
 
 const RESULT_MAX: usize = 6_000;
 
@@ -254,6 +255,28 @@ pub fn all() -> Vec<ToolDef> {
             params: json!({"type": "object", "properties": {}, "required": []}),
             risk: Risk::Read,
         },
+        ToolDef {
+            name: "skills_list",
+            description: "List all of Donna's available skills (name + description only). Call \
+                this to see what skills exist, then skill_view to load one's full instructions \
+                before acting.",
+            params: json!({"type": "object", "properties": {}, "required": []}),
+            risk: Risk::Read,
+        },
+        ToolDef {
+            name: "skill_view",
+            description: "Load a skill's full SKILL.md instructions by name (or a reference file \
+                via `path`). Read the skill BEFORE acting on it; follow its steps.",
+            params: json!({
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Skill name."},
+                    "path": {"type": "string", "description": "A reference file inside the skill."}
+                },
+                "required": ["name"]
+            }),
+            risk: Risk::Read,
+        },
         // ---- Write ---------------------------------------------------------
         ToolDef {
             name: "kb_save_node",
@@ -438,6 +461,24 @@ pub fn all() -> Vec<ToolDef> {
                     "prompt": {"type": "string", "description": "The instruction Donna runs each time the routine fires."}
                 },
                 "required": ["name", "schedule_type", "hour", "minute"]
+            }),
+            risk: Risk::Write,
+        },
+        ToolDef {
+            name: "skill_create",
+            description: "Author a new reusable skill as a SKILL.md. Use when you've worked out \
+                a repeatable multi-step recipe worth saving. name = short title; description = \
+                one line for the catalog; category = a grouping; body = step-by-step instructions \
+                in Markdown.",
+            params: json!({
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Short title for the skill."},
+                    "description": {"type": "string", "description": "One line for the catalog."},
+                    "category": {"type": "string", "description": "A grouping for the skill."},
+                    "body": {"type": "string", "description": "Step-by-step instructions in Markdown."}
+                },
+                "required": ["name", "description", "category", "body"]
             }),
             risk: Risk::Write,
         },
@@ -639,6 +680,13 @@ pub async fn execute(db: &Db, name: &str, args: &Value) -> Result<String> {
         "list_routines" => ok(ops::list_routines(db)?),
         "reading_list_get" => ok(ops::reading_list_get(db).await?),
         "habit_list" => ok(ops::habit_list(db).await?),
+        "skills_list" => ok(skills::list_skills()?),
+        "skill_view" => {
+            #[derive(Deserialize)]
+            struct A { name: String, #[serde(default)] path: Option<String> }
+            let a: A = parse(name, args)?;
+            ok(skills::view_skill(&a.name, a.path.as_deref())?)
+        }
         // ---- Write ------------------------------------------------------
         "kb_save_node" => {
             #[derive(Deserialize)]
@@ -730,6 +778,12 @@ pub async fn execute(db: &Db, name: &str, args: &Value) -> Result<String> {
             let input: ops::CreateRoutineInput = parse(name, args)?;
             ok(ops::create_routine(db, input)?)
         }
+        "skill_create" => {
+            #[derive(Deserialize)]
+            struct A { name: String, description: String, category: String, body: String }
+            let a: A = parse(name, args)?;
+            ok(skills::save_skill(&a.name, &a.description, &a.category, &a.body)?)
+        }
         // ---- Outbound ---------------------------------------------------
         "slack_send_message" => {
             #[derive(Deserialize)]
@@ -806,7 +860,9 @@ mod tests {
     // Implementing all 31 named tools rather than arbitrarily dropping 3 the plan lists.
     // Phase 4 Task 1 adds `memory_update` (Write), bringing the total to 32.
     // Phase 4 Task 2 adds `session_search` (Read), bringing the total to 33.
-    const TOOL_COUNT: usize = 33;
+    // Phase 6 Task 2 adds `skills_list`, `skill_view` (Read), `skill_create` (Write),
+    // bringing the total to 36.
+    const TOOL_COUNT: usize = 36;
 
     #[tokio::test]
     async fn registry_names_unique_and_schemas_valid() {
@@ -837,7 +893,7 @@ mod tests {
         let _kb = crate::knowledge::tests::temp_kb();
         let out = execute(&db, "memory_update", &serde_json::json!({"file":"user","action":"add","text":"Likes tea"})).await.unwrap();
         assert!(out.contains("Likes tea"));
-        assert_eq!(all().len(), 33);
+        assert_eq!(all().len(), 36);
     }
 
     #[test]
@@ -854,6 +910,20 @@ mod tests {
         db.add_message(c, "user", "remember the wifi password is hunter2").unwrap();
         let out = execute(&db, "session_search", &serde_json::json!({"query":"wifi password"})).await.unwrap();
         assert!(out.contains("hunter2"));
-        assert_eq!(all().len(), 33);
+        assert_eq!(all().len(), 36);
+    }
+
+    #[tokio::test]
+    async fn skill_tools_registered_and_dispatch() {
+        let db = test_db();
+        let _g = crate::skills::tests::skills_test_guard();
+        assert_eq!(all().len(), 36);
+        let created = execute(&db, "skill_create", &serde_json::json!({
+            "name":"Trip Planner","description":"Plan a trip","category":"travel","body":"1. Ask dates\n2. ..."})).await.unwrap();
+        assert!(created.contains("trip-planner"));
+        let listed = execute(&db, "skills_list", &serde_json::json!({})).await.unwrap();
+        assert!(listed.contains("Trip Planner"));
+        let viewed = execute(&db, "skill_view", &serde_json::json!({"name":"Trip Planner"})).await.unwrap();
+        assert!(viewed.contains("Ask dates"));
     }
 }

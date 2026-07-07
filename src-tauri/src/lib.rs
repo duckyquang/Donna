@@ -58,6 +58,7 @@ pub fn run() {
             commands::quick_chat_context,
             commands::google_connect,
             commands::export_google_secrets,
+            commands::export_server_bundle,
             commands::project_open_in_editor,
             commands::project_list_files,
             commands::project_read_file,

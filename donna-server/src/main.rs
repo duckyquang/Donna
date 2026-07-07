@@ -4,13 +4,27 @@
 //! variables (see README): `DONNA_DATA_DIR`, `DONNA_TOKEN` (required), `DONNA_PORT`.
 
 use donna_server::{build_app, AppState};
-use donna_core::{db::Db, secrets};
+use donna_core::{bundle, db::Db, secrets};
 use std::sync::Arc;
 
 #[tokio::main]
 async fn main() {
     let data_dir = std::path::PathBuf::from(std::env::var("DONNA_DATA_DIR").unwrap_or("./donna-data".into()));
     std::fs::create_dir_all(&data_dir).expect("create data dir");
+
+    // ponytail: two subcommands don't need a CLI framework.
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() == 3 && args[1] == "import" {
+        let db_path = data_dir.join("donna.sqlite");
+        if db_path.exists() {
+            eprintln!("data dir not empty, aborting");
+            std::process::exit(1);
+        }
+        bundle::import_bundle(std::path::Path::new(&args[2]), &data_dir).expect("import bundle");
+        println!("imported {} into {}", args[2], data_dir.display());
+        return;
+    }
+
     std::env::set_var("DONNA_KB_DIR", data_dir.join("knowledge-base"));
     let _ = donna_core::knowledge::ensure_root();
     secrets::init(Box::new(secrets::FileStore::new(data_dir.join("secrets.json"))));

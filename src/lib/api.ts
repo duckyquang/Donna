@@ -14,6 +14,7 @@ const NATIVE_COMMANDS = new Set([
   "project_list_files",
   "project_read_file",
   "project_write_file",
+  "export_server_bundle",
 ]);
 
 function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -910,4 +911,7 @@ export const api = {
   ): Promise<void> {
     chatStream("quick_chat_send", { message, appName }, (ev) => onEvent(ev as ChatEvent));
   },
+
+  // --- Migration: export old local data for donna-server import ---
+  exportServerBundle: (destDir: string) => invoke<string>("export_server_bundle", { destDir }),
 };

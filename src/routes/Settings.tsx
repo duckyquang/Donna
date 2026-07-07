@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { Check, RefreshCw, Trash2 } from "lucide-react";
 import { PageShell } from "../components/PageShell";
 import { PROVIDERS, type ProviderId } from "../lib/models/providers";
@@ -53,6 +54,24 @@ export default function Settings() {
       setTestResult((await serverReachable()) ? "ok" : "fail");
     } finally {
       setTesting(false);
+    }
+  };
+
+  const [exporting, setExporting] = useState(false);
+
+  const exportBundle = async () => {
+    setError(null);
+    setStatus(null);
+    const destDir = await open({ directory: true, multiple: false });
+    if (!destDir || Array.isArray(destDir)) return;
+    setExporting(true);
+    try {
+      const path = await api.exportServerBundle(destDir);
+      setStatus(`Exported bundle to ${path}`);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -175,6 +194,17 @@ export default function Settings() {
             </Button>
             {testResult === "ok" && <span className="text-xs text-green-400">Connected ✓</span>}
             {testResult === "fail" && <span className="text-xs text-red-400">Unreachable</span>}
+          </div>
+          <div className="border-t border-white/10 pt-3">
+            <p className="mb-2 text-xs text-gray-500">
+              Migrating from an older desktop-only install? Export your local data as a
+              bundle, then run <code className="text-gray-400">donna-server import</code>{" "}
+              with it on your server.
+            </p>
+            <Button variant="ghost" onClick={exportBundle} disabled={exporting}>
+              {exporting ? <Spinner /> : null}
+              Export server bundle…
+            </Button>
           </div>
         </section>
 

@@ -10,7 +10,6 @@ import { Button, Spinner } from "../components/ui";
 
 const TOOL_LABELS: Record<string, string> = {
   slack_send_message: "Slack: send message",
-  discord_send_message: "Discord: send message",
   telegram_send_message: "Telegram: send message",
 };
 

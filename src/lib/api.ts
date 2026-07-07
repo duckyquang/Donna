@@ -137,7 +137,7 @@ export interface Message {
 
 export type ChatEvent =
   | { type: "token"; content: string }
-  | { type: "done"; messageId: number }
+  | { type: "done"; message_id: number }
   | { type: "error"; message: string }
   | { type: "tool"; name: string; label: string; status: "running" | "done" | "error" }
   | { type: "approval"; approval_id: number; summary: string; tool: string };

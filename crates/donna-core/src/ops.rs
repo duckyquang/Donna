@@ -1192,10 +1192,12 @@ pub async fn habit_logged_today(db: &Db, habit_id: i64) -> Result<bool> {
 
 /// Set a one-shot note-to-self reminder. `due_at` must be RFC3339.
 pub async fn remember(db: &Db, text: String, due_at: String) -> Result<i64> {
-    if chrono::DateTime::parse_from_rfc3339(&due_at).is_err() {
-        return Err(Error::Provider("due_at must be RFC3339, e.g. 2026-01-01T09:00:00Z".into()));
-    }
-    db.insert_reminder(&text, &due_at)
+    let parsed = chrono::DateTime::parse_from_rfc3339(&due_at)
+        .map_err(|_| Error::Provider("due_at must be RFC3339, e.g. 2026-01-01T09:00:00Z".into()))?;
+    // Normalize to UTC before storing so `due_unfired_reminders` can compare RFC3339
+    // strings lexicographically against a UTC `now` — see its doc-comment.
+    let due_utc = parsed.with_timezone(&chrono::Utc).to_rfc3339();
+    db.insert_reminder(&text, &due_utc)
 }
 
 // --- Quick Chat ---------------------------------------------------------------

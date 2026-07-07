@@ -57,14 +57,16 @@ async fn tick(db: &Db, notifier: &Arc<dyn Notifier>) -> Result<()> {
     let routines = db.list_routines()?;
     // Prefer the user's configured timezone; fall back to the system-local one
     // when the setting is unset or fails to parse as a `chrono_tz::Tz`.
-    let (due, now_rfc3339) = match configured_tz(db) {
+    let (due, now_utc_rfc3339) = match configured_tz(db) {
         Some(tz) => {
             let now = Utc::now().with_timezone(&tz);
-            (collect_due_routines(db, &routines, now).await?, now.to_rfc3339())
+            let due = collect_due_routines(db, &routines, now).await?;
+            (due, now.with_timezone(&Utc).to_rfc3339())
         }
         None => {
             let now = Local::now();
-            (collect_due_routines(db, &routines, now).await?, now.to_rfc3339())
+            let due = collect_due_routines(db, &routines, now).await?;
+            (due, now.with_timezone(&Utc).to_rfc3339())
         }
     };
 
@@ -74,7 +76,7 @@ async fn tick(db: &Db, notifier: &Arc<dyn Notifier>) -> Result<()> {
         }
     }
 
-    fire_due_reminders(db, notifier, &now_rfc3339)?;
+    fire_due_reminders(db, notifier, &now_utc_rfc3339)?;
     Ok(())
 }
 

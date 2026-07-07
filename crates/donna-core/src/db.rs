@@ -915,6 +915,11 @@ impl Db {
         Ok(conn.last_insert_rowid())
     }
 
+    /// Contract: both `due_at` (as stored) and `now_iso` must be UTC-normalized
+    /// RFC3339 (`+00:00`) — the comparison below is a lexicographic string compare,
+    /// which is only correct when both sides share the same fixed-width UTC offset.
+    /// Writers normalize: `ops::remember` before insert, and the scheduler sweep
+    /// before calling this function.
     pub fn due_unfired_reminders(&self, now_iso: &str) -> Result<Vec<Reminder>> {
         let conn = self.0.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -1121,6 +1126,24 @@ mod tests {
         // not yet due
         db.insert_reminder("later", "2027-01-01T00:00:00Z").unwrap();
         assert!(db.due_unfired_reminders("2026-01-02T00:00:00Z").unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn remember_normalizes_offsets_to_utc() {
+        let db = test_db();
+        // ops::remember with a +07:00 due_at that is ALREADY PAST in UTC (= 02:00Z)
+        crate::ops::remember(&db, "tea".into(), "2026-01-01T09:00:00+07:00".into())
+            .await
+            .unwrap();
+        let due = db.due_unfired_reminders("2026-01-01T03:00:00+00:00").unwrap();
+        assert_eq!(due.len(), 1, "overdue +07:00 reminder must be found by a UTC now");
+        assert_eq!(due[0].due_at, "2026-01-01T02:00:00+00:00");
+
+        // and one NOT yet due (= 16:00Z)
+        crate::ops::remember(&db, "later".into(), "2026-01-01T23:00:00+07:00".into())
+            .await
+            .unwrap();
+        assert_eq!(db.due_unfired_reminders("2026-01-01T03:00:00+00:00").unwrap().len(), 1);
     }
 
     #[test]

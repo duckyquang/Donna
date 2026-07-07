@@ -1353,6 +1353,11 @@ pub async fn whatsapp_handle_audio(db: &Db, media_id: &str) -> Result<()> {
         }
     };
 
+    if text.trim().is_empty() {
+        best_effort_reply(db, "I couldn't hear anything in that voice note.").await;
+        return Ok(());
+    }
+
     let conv = whatsapp_session_conversation(db)?;
     db.add_message(conv, "user", &text)?;
 

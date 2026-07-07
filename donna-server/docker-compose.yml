@@ -1,0 +1,19 @@
+services:
+  donna:
+    build:
+      context: ..
+      dockerfile: donna-server/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - "donna-data:/data"
+    ports:
+      - "8377:8377"
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      - "TUNNEL_TOKEN=${TUNNEL_TOKEN}"
+volumes:
+  donna-data:

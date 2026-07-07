@@ -110,10 +110,22 @@ quality? Plug in your own key. Your choice, switchable anytime.
 | Fathom | Secure connection (meeting → doc actions land with Docs) | Available |
 | Gmail | Read, search, draft, organize email | Auth ready (actions soon) |
 | Google Docs / Drive | Create and update docs and files | Auth ready (actions soon) |
-| WhatsApp | Message Donna (inbound) | Planned |
+| WhatsApp | Send messages out (outbound) works today; two-way (Donna receiving and replying) is planned for Phase 3 — see the [server-first design spec](docs/superpowers/specs/2026-07-07-donna-jarvis-design.md) | Outbound available, two-way planned |
 | Notion, Telegram, GitHub, Linear… | More connectors | On the roadmap |
 
 See [`CONTEXT.md`](CONTEXT.md) for the full integration and auth design.
+
+---
+
+## Server-first architecture
+
+Donna is evolving from a desktop-only app into a 24/7 assistant: an always-on
+`donna-server` process now owns the database, knowledge base, and scheduler, and hosts
+an RPC/WebSocket API; the desktop app is a client of it (like any other client would
+be), showing an "unreachable" banner if the server goes down. See
+[`docs/superpowers/specs/2026-07-07-donna-jarvis-design.md`](docs/superpowers/specs/2026-07-07-donna-jarvis-design.md)
+for the full design and [`donna-server/README.md`](donna-server/README.md) for
+deployment (Docker Compose + Cloudflare Tunnel).
 
 ---
 

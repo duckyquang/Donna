@@ -1,143 +1,123 @@
 # donna-server
 
-donna-server is a headless Rust binary that runs 24/7 on a server (VPS, Raspberry Pi, Docker container) and handles Donna's proactive tasks without the desktop app running. It sends you a morning briefing at 8am, daily tech news from Hacker News at 9am, pre-meeting briefings 30 minutes before each Google Calendar event, and a weekly review every Sunday at 8pm — all via WhatsApp or Telegram, using only free APIs.
+donna-server is Donna's 24/7 brain. It's a headless Rust (axum) binary that runs on a
+VPS, Raspberry Pi, home server, or any always-on Linux box, and it owns everything the
+desktop app used to keep locally:
+
+- `donna.sqlite` — conversations, memory, mind map, routines
+- `knowledge-base/` — the folder-based knowledge base
+- `secrets.json` — API keys / integration credentials (file-backed, 0600)
+
+It exposes an RPC + WebSocket API on port 8377 that the Donna desktop app (and any
+other client) talks to. The desktop app no longer touches the database directly — it's
+a client of this server. See the design spec at
+[`docs/superpowers/specs/2026-07-07-donna-jarvis-design.md`](../docs/superpowers/specs/2026-07-07-donna-jarvis-design.md)
+for the full architecture.
+
+The built-in scheduler still runs here too, so proactive routines (morning briefing,
+meeting briefings, etc.) fire even when no desktop app is open.
 
 ---
 
-## Prerequisites — Environment Variables
-
-Copy `.env.example` to `.env` and fill in the values you need.
-
-| Group | Variables | Required? |
-|---|---|---|
-| WhatsApp | `DONNA_WHATSAPP_TOKEN`, `DONNA_WHATSAPP_PHONE_ID`, `DONNA_MY_WHATSAPP` | One of WhatsApp or Telegram |
-| Telegram | `DONNA_TELEGRAM_TOKEN`, `DONNA_TELEGRAM_CHAT_ID` | One of WhatsApp or Telegram |
-| Google Calendar | `DONNA_GOOGLE_CLIENT_ID`, `DONNA_GOOGLE_CLIENT_SECRET`, `DONNA_GOOGLE_REFRESH_TOKEN` | Optional — enables calendar features |
-| AI Provider | `DONNA_AI_PROVIDER`, `DONNA_AI_KEY`, `DONNA_AI_MODEL` | Optional — enriches briefings |
-| Ollama | `DONNA_OLLAMA_URL` | Only if `DONNA_AI_PROVIDER=ollama` |
-| Location | `DONNA_LAT`, `DONNA_LON` | Optional — enables weather in morning briefing |
-| Schedule | `DONNA_NEWS_HOUR`, `DONNA_BRIEFING_HOUR` | Optional — default 9 and 8 |
-
----
-
-## Run locally
+## Quickstart
 
 ```bash
 cd donna-server
-
-# Option A: export vars directly
-export DONNA_WHATSAPP_TOKEN=your_token
-export DONNA_WHATSAPP_PHONE_ID=your_phone_id
-export DONNA_MY_WHATSAPP=+84123456789
-# … add more as needed
-
-cargo run
-
-# Option B: use a .env file with a tool like dotenvx or direnv
 cp .env.example .env
-# edit .env, then:
-dotenvx run -- cargo run
+# edit .env — set DONNA_TOKEN to a real secret, leave TUNNEL_TOKEN blank for now
+docker compose up -d
 ```
 
-The server prints a startup summary and then ticks every 60 seconds. Tasks fire once per day/week at their scheduled hour.
+That starts two containers:
 
----
+- `donna` — the server itself, listening on `:8377`, data persisted in the
+  `donna-data` Docker volume (`/data` inside the container).
+- `tunnel` — a `cloudflared` sidecar. It's a no-op until you set `TUNNEL_TOKEN` (see
+  below) — safe to leave running either way.
 
-## Deploy with Docker
+Check it's alive:
 
 ```bash
-# Build
-docker build -t donna-server .
-
-# Run with an env file
-docker run -d --restart unless-stopped --env-file .env --name donna-server donna-server
-
-# Check logs
-docker logs -f donna-server
+curl http://localhost:8377/health
 ```
 
 ---
 
-## Free deployment options
+## Environment variables
 
-### Oracle Cloud Free Tier (recommended)
+| Variable | Required | Default | Meaning |
+|---|---|---|---|
+| `DONNA_TOKEN` | Yes | — | Bearer token clients must send. Server refuses to start without it. |
+| `DONNA_PORT` | No | `8377` | Port the server listens on. |
+| `DONNA_DATA_DIR` | No | `/data` (in the container) | Where `donna.sqlite`, `knowledge-base/`, and `secrets.json` live. Set by the Dockerfile; only override if running the binary outside Docker. |
+| `TUNNEL_TOKEN` | No | — | Cloudflare Tunnel token, for exposing the server publicly. See below. |
 
-Oracle's Always Free tier includes an ARM instance with 4 OCPU and 24 GB RAM — more than enough to run donna-server forever at no cost.
+---
 
-1. Sign up at [cloud.oracle.com](https://cloud.oracle.com)
-2. Create an **Ampere A1** instance (choose Ubuntu or Debian)
-3. SSH in, install Docker or copy the binary directly:
+## Exposing it publicly with Cloudflare Tunnel
+
+You don't need this for local/LAN use — only if you want to reach the server from
+outside your network (e.g. for a future WhatsApp webhook, or connecting the desktop
+app while you're away from home).
+
+1. In the [Cloudflare Zero Trust dashboard](https://one.dash.cloudflare.com/), go to
+   **Networks → Tunnels** and create a tunnel.
+2. Add a public hostname route pointing at `http://donna:8377` (that's the Docker
+   Compose service name — the tunnel sidecar reaches it over the compose network).
+3. Copy the tunnel token into `TUNNEL_TOKEN` in `.env`, then `docker compose up -d`
+   again to pick it up.
+
+---
+
+## Migrating from a desktop-only install
+
+If you've been running Donna as a desktop-only app and want to move its data onto the
+server:
+
+1. In the desktop app, go to **Settings** → click **Export server bundle…**. This
+   writes a `bundle.tar.gz` containing your `donna.sqlite`, `knowledge-base/`, and
+   secrets.
+2. Copy it to the server (e.g. `scp bundle.tar.gz you@server:/path/`).
+3. Import it into a **fresh** data directory:
    ```bash
-   # Copy binary
-   scp target/release/donna-server ubuntu@your-ip:/usr/local/bin/
-
-   # Or use Docker (install Docker first, then run the docker command above)
+   docker compose run --rm donna donna-server import /data/bundle.tar.gz
    ```
-4. Set up environment variables and start the service — it runs forever for free.
+   The import refuses to run if `/data/donna.sqlite` already exists — it's meant for
+   a first-time migration, not merging. If an import is interrupted partway through,
+   delete the data volume/dir and retry from the bundle; it's a minor caveat since
+   this only matters mid-migration, not during normal operation.
+4. `docker compose up -d` to start the server against the migrated data.
+5. Back in the desktop app's **Settings**, set **Server URL** (your tunnel hostname,
+   or `http://localhost:8377` for LAN/local) and **Access token** (your
+   `DONNA_TOKEN`), then **Test connection**.
 
-### Fly.io
+### If you're switching embedding providers (e.g. Ollama → OpenAI)
 
-```bash
-# Install flyctl, then from this directory:
-fly launch           # follow prompts, pick a small shared-cpu instance
-fly secrets set DONNA_WHATSAPP_TOKEN=xxx DONNA_MY_WHATSAPP=+84... # etc.
-fly deploy
-fly logs             # watch it run
-```
-
-### Raspberry Pi
-
-```bash
-# Cross-compile or build on the Pi itself
-cargo build --release
-
-# Copy binary
-scp target/release/donna-server pi@raspberrypi.local:/usr/local/bin/
-
-# Create a systemd unit
-sudo tee /etc/systemd/system/donna-server.service <<EOF
-[Unit]
-Description=Donna Server
-After=network.target
-
-[Service]
-ExecStart=/usr/local/bin/donna-server
-Restart=always
-EnvironmentFile=/etc/donna-server.env
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# Put your env vars in /etc/donna-server.env (one KEY=value per line)
-sudo systemctl daemon-reload
-sudo systemctl enable --now donna-server
-sudo journalctl -u donna-server -f
-```
+Stored vectors are tied to whatever model produced them — switching providers after
+migration means old vectors no longer match new query embeddings. Run a one-time
+reindex (the existing `kg_reindex_embeddings` Rust command, exposed as
+`api.kgReindexEmbeddings()` in `src/lib/api.ts`) so everything is re-embedded with the
+new model. There's no UI button wired up for this yet — call
+`api.kgReindexEmbeddings()` from the desktop app's devtools console, or wire a button
+into the Mind Map view if you hit this regularly.
 
 ---
 
-## Exporting your Google refresh token from Donna desktop
+## Local development (without Docker)
 
-1. Open the Donna desktop app
-2. Go to **Settings**
-3. Click **Export Google Token** (or "Export credentials")
-4. Copy the refresh token and set it as `DONNA_GOOGLE_REFRESH_TOKEN` in your `.env`
+```bash
+cd donna-server
+DONNA_TOKEN=dev cargo run
+```
 
-The same OAuth client credentials (`DONNA_GOOGLE_CLIENT_ID` and `DONNA_GOOGLE_CLIENT_SECRET`) are reused — you can find these in your Google Cloud Console project.
+Data defaults to `./donna-data` when `DONNA_DATA_DIR` isn't set.
 
 ---
 
-## FAQ
+## What's NOT here yet
 
-**Can I run donna-server next to Ollama on the same machine?**
-
-Yes. Set `DONNA_AI_PROVIDER=ollama` and `DONNA_OLLAMA_URL=http://localhost:11434` (or whatever host/port your Ollama instance is on). donna-server will call Ollama for AI-enriched briefings with zero external API cost. This works great on an Oracle Cloud ARM instance or a Raspberry Pi 4 with enough RAM to run a small model like Mistral 7B.
-
-**Does this replace the Donna desktop app?**
-
-No — they are complementary. The desktop app handles interactive conversations and on-demand queries. donna-server handles proactive, scheduled notifications so you get updates even when the desktop app is closed.
-
-**What if I don't set up WhatsApp or Telegram?**
-
-donna-server will still run and log all scheduled tasks to stdout — you just won't receive messages. This is useful for testing your config before connecting a messaging channel.
+This is Phase 1 (foundation) of the [server-first design](../docs/superpowers/specs/2026-07-07-donna-jarvis-design.md).
+Not built yet: the agent loop / tool registry / trust engine (Phase 2), two-way
+WhatsApp (Phase 3), USER.md/MEMORY.md + FTS5 + suggestion queue (Phase 4), voice
+(Phase 5), skills (Phase 6). Today, donna-server is the RPC/WS API + scheduler +
+data owner — functionally equivalent to the old desktop-only app, just always-on.

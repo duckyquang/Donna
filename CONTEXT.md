@@ -421,3 +421,21 @@ donna/
 - Prefer local-first defaults; make any data egress explicit to the user.
 - Keep the model layer provider-agnostic — add providers, don't special-case callers.
 - Update this file when architecture or scope changes.
+
+---
+
+## 15. Server-first evolution (2026-07)
+
+Donna is moving from a desktop-only app to a 24/7 proactive assistant. The desktop app
+is now a **client** of an always-on `donna-server` process (axum, Rust workspace
+member) that owns `donna.sqlite`, the knowledge base, and the scheduler, and hosts an
+RPC + WebSocket API. The desktop app talks to it over HTTP/WS with a bearer token
+instead of touching the database directly, and shows an "unreachable" banner if the
+server is down — there's no second local brain or offline fallback.
+
+This is Phase 1 (Foundation) of a six-phase build-out (agent loop + trust engine,
+two-way WhatsApp, memory/FTS5/suggestion queue, voice, skills). Full design, decisions,
+and rationale: [`docs/superpowers/specs/2026-07-07-donna-jarvis-design.md`](docs/superpowers/specs/2026-07-07-donna-jarvis-design.md).
+Deployment: `donna-server/` ships a Docker Compose setup with a Cloudflare Tunnel
+sidecar for optional public HTTPS (see `donna-server/README.md`). See also
+[`docs/ROADMAP.md`](docs/ROADMAP.md) Phase 7 for the itemized checklist.

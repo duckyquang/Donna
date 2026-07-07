@@ -192,7 +192,7 @@ pub fn all() -> Vec<ToolDef> {
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "What to search for."},
-                    "limit": {"type": "integer", "description": "How many messages to return (max 25, default 10).", "maximum": 25}
+                    "limit": {"type": "integer", "description": "How many messages to return (max 25, default 10).", "minimum": 1, "maximum": 25}
                 },
                 "required": ["query"]
             }),
@@ -610,7 +610,7 @@ pub async fn execute(db: &Db, name: &str, args: &Value) -> Result<String> {
             let a: A = parse(name, args)?;
             #[derive(serde::Serialize)]
             struct Hit { conversation_id: i64, role: String, content: String, created_at: String }
-            let hits = db.search_messages(&a.query, a.limit.min(25))?
+            let hits = db.search_messages(&a.query, a.limit.clamp(1, 25))?
                 .into_iter()
                 .map(|m| Hit { conversation_id: m.conversation_id, role: m.role, content: m.content, created_at: m.created_at })
                 .collect::<Vec<_>>();

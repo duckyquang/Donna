@@ -70,7 +70,10 @@ fn build_system_prompt(
         prompt.push_str("\n\n");
     }
     prompt.push_str(&format!(
-        "## What Donna knows about this user\n{known}\n\n{setup}"
+        "## What Donna knows about this user\n\
+         (The sections above are your curated memory; the list below is the raw knowledge \
+         graph it is distilled from. When they overlap, trust the curated memory.)\n\
+         {known}\n\n{setup}"
     ));
 
     if let Some(ctx) = retrieval_ctx {

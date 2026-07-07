@@ -86,6 +86,9 @@ fn signature_ok(secret: &str, headers: &HeaderMap, body: &[u8]) -> bool {
 /// One inbound message → dedupe, allowlist, then spawn the matching handler. Every
 /// handler is `spawn`ed with a cloned `Arc<Db>` so the 200 is never blocked on it.
 fn dispatch(st: &AppState, allow: Option<&str>, msg: Message) {
+    if msg.id.is_empty() {
+        return; // No id to dedupe on — don't poison the empty-string claim key.
+    }
     if !st.db.try_claim_webhook_event(&msg.id).unwrap_or(false) {
         return; // Meta at-least-once retry — already handled.
     }

@@ -4,6 +4,7 @@
 
 mod commands;
 mod quick_chat;
+mod embedded_server;
 
 pub use donna_core::{error, knowledge, secrets};
 
@@ -12,6 +13,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             use tauri::Manager;
 
@@ -22,6 +24,10 @@ pub fn run() {
             // opens the local SQLite DB or warms a model; the server owns all data + logic.
             // Only quick-chat window state and the Cmd+D shortcut live here.
             app.manage(crate::quick_chat::QuickChatState::default());
+
+            // Embedded brain: spawn the bundled donna-server so end users need zero setup.
+            app.manage(crate::embedded_server::EmbeddedState::default());
+            crate::embedded_server::start(app.handle().clone());
 
             // Register Cmd+D global shortcut for the quick-chat overlay
             {
@@ -65,7 +71,13 @@ pub fn run() {
             commands::project_read_file,
             commands::project_write_file,
             commands::project_status_report,
+            embedded_server::embedded_server_status,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Donna");
+        .build(tauri::generate_context!())
+        .expect("error while building Donna")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                crate::embedded_server::kill(app);
+            }
+        });
 }

@@ -7,7 +7,7 @@ import DesktopRequired from "./components/DesktopRequired";
 import { Sidebar } from "./components/Sidebar";
 import { useConfig } from "./lib/useConfig";
 import { isDesktopApp } from "./lib/tauri";
-import { serverReachable, onServerEvent } from "./lib/server";
+import { serverReachable, onServerEvent, bootstrapServerConfig } from "./lib/server";
 import Chat from "./routes/Chat";
 import Dashboard from "./routes/Dashboard";
 import QuickChat from "./routes/QuickChat";
@@ -56,8 +56,43 @@ function UpdateBanner() {
   );
 }
 
+function BrainFailure({ onRetry }: { onRetry: () => void }) {
+  const [retrying, setRetrying] = useState(false);
+  return (
+    <div className="flex h-full w-full items-center justify-center bg-donna-bg p-6">
+      <div className="flex flex-col items-center gap-3 text-center">
+        <p className="text-sm text-gray-400">Donna&apos;s brain didn&apos;t start.</p>
+        <button
+          disabled={retrying}
+          onClick={async () => {
+            setRetrying(true);
+            try {
+              await onRetry();
+            } catch {
+              // refresh() failing just means config is still null; the screen stays up.
+            } finally {
+              setRetrying(false);
+            }
+          }}
+          className="rounded border border-white/20 px-2 py-0.5 text-xs font-medium text-gray-200 hover:bg-white/10"
+        >
+          {retrying ? "Retrying…" : "Retry"}
+        </button>
+        <a
+          href="https://github.com/duckyquang/Donna/issues"
+          target="_blank"
+          rel="noreferrer"
+          className="text-xs text-gray-500 underline hover:text-gray-400"
+        >
+          Report a problem
+        </a>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
-  const { config, loading } = useConfig();
+  const { config, loading, refresh } = useConfig();
   const location = useLocation();
   const [reachable, setReachable] = useState(true);
 
@@ -100,6 +135,20 @@ export default function App() {
       <div className="flex h-full w-full items-center justify-center text-gray-400">
         Loading Donna…
       </div>
+    );
+  }
+
+  // Embedded server never came up (bootstrap failed) — getConfig has no server to ask,
+  // so config is null. Onboarding can't save without a server either, so show a
+  // recovery screen instead of routing into that dead end.
+  if (config === null) {
+    return (
+      <BrainFailure
+        onRetry={async () => {
+          await bootstrapServerConfig({ force: true });
+          await refresh();
+        }}
+      />
     );
   }
 

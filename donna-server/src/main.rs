@@ -32,6 +32,7 @@ async fn main() {
     secrets::init(Box::new(secrets::FileStore::new(data_dir.join("secrets.json"))));
     let token = std::env::var("DONNA_TOKEN").expect("DONNA_TOKEN is required");
     let port: u16 = std::env::var("DONNA_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8377);
+    let bind = std::env::var("DONNA_BIND").unwrap_or("0.0.0.0".into());
     let db = Arc::new(Db::open(&data_dir.join("donna.sqlite")).expect("open db"));
     let (events, _) = tokio::sync::broadcast::channel(256);
     let wa_verify_token = std::env::var("DONNA_WA_VERIFY_TOKEN").ok();
@@ -39,7 +40,7 @@ async fn main() {
     let state = AppState { db, token, events, wa_verify_token, wa_app_secret };
     // Run scheduled routines; due ones fire notify() → broadcast to WS clients.
     donna_core::scheduler::run_loop(state.db.clone(), Arc::new(state.clone()));
-    let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await.unwrap();
-    println!("donna-server listening on :{port}");
+    let listener = tokio::net::TcpListener::bind((bind.as_str(), port)).await.unwrap();
+    println!("donna-server listening on {bind}:{port}");
     axum::serve(listener, build_app(state)).await.unwrap();
 }

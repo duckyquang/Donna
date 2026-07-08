@@ -64,3 +64,8 @@ Then open the draft release on GitHub and **publish** it — the in-app updater 
 the landing page's download buttons both read `releases/latest`, which only sees
 published releases. Requires the `TAURI_SIGNING_PRIVATE_KEY` and
 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repo secrets (from `tauri signer generate`).
+
+Since `latest.json` reports whatever version is in `tauri.conf.json` regardless of
+the git tag, always bump `tauri.conf.json` and `package.json` above any published rc
+before tagging the final release — rc installs self-report that version already and
+won't see a same-version final as an update.

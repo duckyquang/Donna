@@ -123,15 +123,24 @@ export type EmbeddedStatus =
  * Adopt the embedded sidecar's {url, token} on first run. No-op when a token is
  * already stored (remote-server installs) or outside the desktop app. Resolves when
  * the sidecar is ready, has failed (dev without a sidecar), or ~20s pass.
+ *
+ * `opts.force` is for the "Donna's brain didn't start" retry button: it re-polls and
+ * adopts on ready even if a token is already stored, but only when that stored token
+ * either matches the embedded one or is empty — a differing/remote token is never
+ * clobbered.
  */
-export async function bootstrapServerConfig(): Promise<void> {
-  if (!isDesktopApp() || localStorage.getItem("donna.serverToken")) return;
+export async function bootstrapServerConfig(opts?: { force?: boolean }): Promise<void> {
+  if (!isDesktopApp()) return;
+  const storedToken = localStorage.getItem("donna.serverToken");
+  if (storedToken && !opts?.force) return;
   for (let i = 0; i < 66; i++) {
     const s = await invoke<EmbeddedStatus>("embedded_server_status").catch(
       () => ({ status: "failed", error: "no shell" }) as EmbeddedStatus,
     );
     if (s.status === "ready") {
-      setServerConfig({ url: s.url, token: s.token });
+      if (!storedToken || storedToken === s.token) {
+        setServerConfig({ url: s.url, token: s.token });
+      }
       return;
     }
     if (s.status === "failed") return;

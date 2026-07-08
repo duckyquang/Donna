@@ -2,6 +2,7 @@
 const REPO = "duckyquang/Donna";
 
 function detectOS() {
+  if (/iPhone|iPad|Android/i.test(navigator.userAgent)) return "other";
   const p = `${navigator.platform} ${navigator.userAgent}`;
   if (/Mac/i.test(p)) return "mac";
   if (/Win/i.test(p)) return "windows";
@@ -24,6 +25,7 @@ async function latestAssets() {
   return {
     version: rel.tag_name,
     mac: find(/aarch64\.dmg$/) || find(/\.dmg$/),
+    macIntel: find(/x64\.dmg$/),
     windows: find(/set(up)?\.exe$/i) || find(/\.msi$/) || find(/\.exe$/),
     linux: find(/\.AppImage$/) || find(/\.deb$/),
   };
@@ -39,5 +41,12 @@ async function latestAssets() {
     if (assets[os]) btn.href = assets[os];
     const v = document.querySelector("[data-version]");
     if (v && assets.version) v.textContent = `· ${assets.version}`;
+    if (os === "mac") {
+      const intelLink = document.querySelector("[data-mac-intel]");
+      if (intelLink) {
+        intelLink.hidden = false;
+        if (assets.macIntel) intelLink.href = assets.macIntel;
+      }
+    }
   }
 })();

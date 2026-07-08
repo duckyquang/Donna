@@ -3,6 +3,11 @@
 //! The packaged app ships donna-server as a sidecar and spawns it on launch so end
 //! users never touch Docker or a terminal. The UI adopts this config only when no
 //! server token is stored (see src/lib/server.ts), so remote-server users are unaffected.
+//!
+//! Restart policy: both a post-healthy crash and a startup health-check timeout count
+//! against `MAX_RESTARTS` and retry with a 2s delay. Only a spawn error (e.g. the
+//! sidecar binary is missing — dev builds without `npm run sidecar`) is immediately
+//! terminal, since retrying can't fix a missing binary.
 
 use serde::Serialize;
 use std::path::Path;
@@ -79,16 +84,38 @@ pub fn pick_port(preferred: u16) -> u16 {
         .unwrap_or(preferred)
 }
 
+/// A `spawn_once` failure, distinguishing a retryable startup timeout from a terminal
+/// spawn error (e.g. the sidecar binary is missing in dev).
+enum SpawnFailure {
+    /// Health check never went green within the timeout; child was killed. Retryable.
+    HealthTimeout,
+    /// Couldn't even launch the process. Not retryable.
+    SpawnError(String),
+}
+
 /// Spawn the sidecar and keep it alive (bounded restarts). Runs for the app's lifetime.
 pub fn start(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
             let mut rx = match spawn_once(&app).await {
-                Ok(rx) => rx,
-                Err(e) => {
+                Ok(rx) => {
+                    // Reached Ready — forgive past restarts so a long healthy run
+                    // doesn't inherit a stale counter from earlier flakiness.
+                    let state = app.state::<EmbeddedState>();
+                    *state.restarts.lock().unwrap() = 0;
+                    rx
+                }
+                Err(SpawnFailure::SpawnError(e)) => {
                     let state = app.state::<EmbeddedState>();
                     *state.status.lock().unwrap() = EmbeddedStatus::Failed { error: e };
                     return;
+                }
+                Err(SpawnFailure::HealthTimeout) => {
+                    if !count_restart_or_fail(&app, "embedded server did not become healthy") {
+                        return;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    continue;
                 }
             };
             // Wait until the child dies.
@@ -103,15 +130,7 @@ pub fn start(app: tauri::AppHandle) {
             if state.quitting.load(Ordering::SeqCst) {
                 return;
             }
-            let attempts = {
-                let mut n = state.restarts.lock().unwrap();
-                *n += 1;
-                *n
-            };
-            if attempts > MAX_RESTARTS {
-                *state.status.lock().unwrap() = EmbeddedStatus::Failed {
-                    error: "embedded server keeps crashing".into(),
-                };
+            if !count_restart_or_fail(&app, "embedded server keeps crashing") {
                 return;
             }
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
@@ -119,25 +138,48 @@ pub fn start(app: tauri::AppHandle) {
     });
 }
 
+/// Bump the restart counter; if it's past `MAX_RESTARTS`, mark Failed and return false
+/// (caller should stop looping). Otherwise returns true (caller should retry).
+fn count_restart_or_fail(app: &tauri::AppHandle, fail_message: &str) -> bool {
+    let state = app.state::<EmbeddedState>();
+    let attempts = {
+        let mut n = state.restarts.lock().unwrap();
+        *n += 1;
+        *n
+    };
+    if attempts > MAX_RESTARTS {
+        *state.status.lock().unwrap() = EmbeddedStatus::Failed {
+            error: fail_message.into(),
+        };
+        return false;
+    }
+    *state.status.lock().unwrap() = EmbeddedStatus::Starting;
+    true
+}
+
 async fn spawn_once(
     app: &tauri::AppHandle,
-) -> Result<tauri::async_runtime::Receiver<CommandEvent>, String> {
-    let data_root = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let token =
-        load_or_create_token(&data_root.join("server-token")).map_err(|e| e.to_string())?;
+) -> Result<tauri::async_runtime::Receiver<CommandEvent>, SpawnFailure> {
+    let data_root = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| SpawnFailure::SpawnError(e.to_string()))?;
+    let token = load_or_create_token(&data_root.join("server-token"))
+        .map_err(|e| SpawnFailure::SpawnError(e.to_string()))?;
     let port = pick_port(PREFERRED_PORT);
     let (rx, child) = app
         .shell()
         .sidecar("donna-server")
-        .map_err(|e| e.to_string())?
+        .map_err(|e| SpawnFailure::SpawnError(e.to_string()))?
         .env("DONNA_TOKEN", &token)
         .env("DONNA_PORT", port.to_string())
         .env(
             "DONNA_DATA_DIR",
             data_root.join("server").to_string_lossy().to_string(),
         )
+        .env("DONNA_BIND", "127.0.0.1")
         .spawn()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| SpawnFailure::SpawnError(e.to_string()))?;
     let state = app.state::<EmbeddedState>();
     *state.child.lock().unwrap() = Some(child);
 
@@ -156,18 +198,25 @@ async fn spawn_once(
         }
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
     }
-    kill(app);
-    Err("embedded donna-server did not report healthy within 15s".into())
+    kill_child(app);
+    Err(SpawnFailure::HealthTimeout)
 }
 
-/// Kill the sidecar (app quit, or a failed health wait). Safe to call twice.
-pub fn kill(app: &tauri::AppHandle) {
+/// Take and kill the child process without touching `quitting`. Used by the
+/// health-timeout path, where the sidecar should be restarted, not shut down for good.
+fn kill_child(app: &tauri::AppHandle) {
     let state = app.state::<EmbeddedState>();
-    state.quitting.store(true, Ordering::SeqCst);
     let child = state.child.lock().unwrap().take();
     if let Some(child) = child {
         let _ = child.kill();
     }
+}
+
+/// Kill the sidecar for good (app quit). Safe to call twice.
+pub fn kill(app: &tauri::AppHandle) {
+    let state = app.state::<EmbeddedState>();
+    state.quitting.store(true, Ordering::SeqCst);
+    kill_child(app);
 }
 
 #[tauri::command]

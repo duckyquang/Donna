@@ -35,28 +35,9 @@ export default function Onboarding() {
       if (!isLocal && apiKey.trim()) {
         await api.setApiKey(provider, apiKey.trim());
       }
-      if (isLocal) {
-        await api.saveConfig({
-          provider,
-          model: "",
-          ollamaHost,
-          embedModel: "nomic-embed-text",
-          reviewModel: "",
-          ttsVoice: "",
-          speakReplies: false,
-          onboarded: false,
-          profileOnboarded: false,
-          autonomyLevel: "confirm",
-        });
-      }
       const list = await api.listModels(provider);
       setModels(list);
       if (list.length > 0) setModel((m) => m || list[0]);
-      if (list.length === 0 && isLocal) {
-        setError(
-          "No local models found. Install Ollama and pull a model (e.g. `ollama pull qwen2.5`), then refresh."
-        );
-      }
     } catch (e) {
       setError(String(e));
     } finally {

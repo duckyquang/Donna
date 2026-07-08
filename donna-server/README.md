@@ -49,6 +49,7 @@ curl http://localhost:8377/health
 |---|---|---|---|
 | `DONNA_TOKEN` | Yes | — | Bearer token clients must send. Server refuses to start without it. |
 | `DONNA_PORT` | No | `8377` | Port the server listens on. |
+| `DONNA_BIND` | No | `0.0.0.0` | Interface to bind to. The Tauri desktop app's embedded sidecar sets this to `127.0.0.1` since it's only ever reached locally; leave the Docker default alone unless you know you want it exposed differently. |
 | `DONNA_DATA_DIR` | No | `/data` (in the container) | Where `donna.sqlite`, `knowledge-base/`, and `secrets.json` live. Set by the Dockerfile; only override if running the binary outside Docker. |
 | `TUNNEL_TOKEN` | No | — | Cloudflare Tunnel token, for exposing the server publicly. See below. |
 | `DONNA_WA_VERIFY_TOKEN` | No | — | Verify token for the WhatsApp webhook handshake. See [WhatsApp two-way](#whatsapp-two-way-phase-3) below. |

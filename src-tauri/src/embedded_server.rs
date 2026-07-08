@@ -98,6 +98,8 @@ pub fn start(app: tauri::AppHandle) {
                 }
             }
             let state = app.state::<EmbeddedState>();
+            // Mark as Starting immediately when child dies to avoid stale-Ready window.
+            *state.status.lock().unwrap() = EmbeddedStatus::Starting;
             if state.quitting.load(Ordering::SeqCst) {
                 return;
             }
@@ -112,7 +114,6 @@ pub fn start(app: tauri::AppHandle) {
                 };
                 return;
             }
-            *state.status.lock().unwrap() = EmbeddedStatus::Starting;
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         }
     });

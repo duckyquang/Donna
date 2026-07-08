@@ -32,10 +32,12 @@ async function latestAssets() {
 (async () => {
   const os = detectOS();
   const btn = document.querySelector("[data-download]");
-  btn.textContent = OS_LABEL[os];
-  const assets = await latestAssets().catch(() => null);
-  if (!assets) return; // button already links to the releases page
-  if (assets[os]) btn.href = assets[os];
-  const v = document.querySelector("[data-version]");
-  if (v && assets.version) v.textContent = `· ${assets.version}`;
+  if (btn) {
+    btn.textContent = OS_LABEL[os];
+    const assets = await latestAssets().catch(() => null);
+    if (!assets) return; // button already links to the releases page
+    if (assets[os]) btn.href = assets[os];
+    const v = document.querySelector("[data-version]");
+    if (v && assets.version) v.textContent = `· ${assets.version}`;
+  }
 })();

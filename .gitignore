@@ -35,6 +35,9 @@ data/
 /knowledge-base/*
 !/knowledge-base/README.md
 
+# Sidecar binaries
+src-tauri/binaries/
+
 # Logs
 *.log
 npm-debug.log*

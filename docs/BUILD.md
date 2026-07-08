@@ -22,8 +22,11 @@ See [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for details
 
 ```bash
 npm install
+npm run sidecar   # build the donna-server sidecar once (rerun after server changes)
 npm run tauri:dev
 ```
+
+Tauri refuses to start if the sidecar binary is missing — rerun `npm run sidecar` after pulling server changes.
 
 The knowledge base lives in `knowledge-base/` at the repo root. SQLite and settings are stored in the OS app data directory.
 

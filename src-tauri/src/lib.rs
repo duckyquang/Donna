@@ -48,6 +48,32 @@ pub fn run() {
                 })?;
             }
 
+            // Tray: closing the window already hides it (see on_window_event); the tray
+            // is how users reopen Donna or actually quit. The server keeps running
+            // while hidden, so routines still fire.
+            {
+                use tauri::menu::{Menu, MenuItem};
+                use tauri::tray::TrayIconBuilder;
+                let open = MenuItem::with_id(app, "open", "Open Donna", true, None::<&str>)?;
+                let quit = MenuItem::with_id(app, "quit", "Quit Donna", true, None::<&str>)?;
+                let menu = Menu::with_items(app, &[&open, &quit])?;
+                TrayIconBuilder::with_id("donna-tray")
+                    .icon(app.default_window_icon().unwrap().clone())
+                    .menu(&menu)
+                    .show_menu_on_left_click(true)
+                    .on_menu_event(|app, e| match e.id.as_ref() {
+                        "open" => {
+                            if let Some(w) = app.get_webview_window("main") {
+                                let _ = w.show();
+                                let _ = w.set_focus();
+                            }
+                        }
+                        "quit" => app.exit(0),
+                        _ => {}
+                    })
+                    .build(app)?;
+            }
+
             // ponytail: one brain, one scheduler — donna-server runs routines (Task 9);
             // the desktop app no longer starts its own scheduler loop.
 

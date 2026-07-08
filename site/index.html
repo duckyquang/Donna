@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Donna — the AI assistant that's actually yours</title>
+  <meta name="description" content="Donna is a private AI personal assistant that runs on your computer. She remembers, reminds, drafts, and gets work done — before you ask." />
+  <link rel="icon" href="assets/donna-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <a class="brand" href="#top"><img src="assets/donna-icon.png" alt="" /><span>Donna</span></a>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#integrations">Integrations</a>
+    <a href="#privacy">Privacy</a>
+    <a href="#faq">FAQ</a>
+  </div>
+  <div class="nav-cta">
+    <a href="https://github.com/duckyquang/Donna" class="ghost">GitHub</a>
+    <a href="#download" class="button small">Download</a>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="hero-cards" aria-hidden="true">
+    <div class="card sticky-note">Remind me to send the deck before Friday’s standup — and draft the follow-up email.</div>
+    <div class="card mini-card reminders">
+      <h4>Reminders</h4>
+      <div class="row"><span class="dot blue"></span>Meeting brief — 13:00</div>
+      <div class="row"><span class="dot green"></span>Follow up with Sarah</div>
+    </div>
+    <div class="card mini-card tasks">
+      <h4>Today</h4>
+      <div class="row"><span class="check"></span>Recap of yesterday’s call</div>
+      <div class="row"><span class="check done"></span>Morning briefing</div>
+    </div>
+    <div class="card logo-cluster">
+      <img src="assets/gmail.svg" alt="Gmail" />
+      <img src="assets/gcal.svg" alt="Google Calendar" />
+      <img src="assets/slack.svg" alt="Slack" />
+      <img src="assets/whatsapp.svg" alt="WhatsApp" />
+    </div>
+  </div>
+
+  <img class="hero-icon" src="assets/donna-icon.png" alt="Donna app icon" />
+  <h1>Your day, handled<span class="muted">by an assistant that’s yours</span></h1>
+  <p class="sub">Donna is a private AI assistant that lives on your computer. She remembers your people and projects, connects to your tools, and gets work done — before you ask.</p>
+  <div class="cta" id="download">
+    <a class="button" data-download href="https://github.com/duckyquang/Donna/releases/latest">Download Donna</a>
+    <a class="all-platforms" href="https://github.com/duckyquang/Donna/releases/latest">All platforms <span data-version></span> →</a>
+  </div>
+  <p class="fineprint">Free &amp; open source · macOS, Windows, Linux · <a href="#faq-open">First launch on macOS?</a></p>
+</header>
+
+<section class="strip">
+  <div class="point">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/></svg>
+    <p><strong>Proactive by default.</strong> Briefings, reminders, and drafts arrive without being asked.</p>
+  </div>
+  <div class="point">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+    <p><strong>Private by design.</strong> Runs on your machine. Your data never leaves unless you say so.</p>
+  </div>
+  <div class="point">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+    <p><strong>Yours forever.</strong> One download, no subscription, no account. MIT-licensed.</p>
+  </div>
+</section>
+
+<section class="showcase">
+  <span class="pill">Meet Donna</span>
+  <h2>A chief of staff,<br />living on your desktop</h2>
+  <div class="frame">
+    <div class="app-mock">
+      <div class="mock-sidebar">
+        <div class="mock-logo"></div>
+        <div class="mock-nav-item active"></div>
+        <div class="mock-nav-item"></div>
+        <div class="mock-nav-item"></div>
+        <div class="mock-nav-item"></div>
+      </div>
+      <div class="mock-main">
+        <div class="mock-greeting">Good morning</div>
+        <div class="mock-grid">
+          <div class="mock-card tall">
+            <h5>Chat</h5>
+            <div class="bubble donna">Your 1:1 with Alex moved to 2 pm — I updated the calendar and drafted your prep notes.</div>
+            <div class="bubble user">Perfect. Remind me to review them at 1:30.</div>
+            <div class="bubble donna">Done — reminder set for 1:30 pm.</div>
+          </div>
+          <div class="mock-card">
+            <h5>Today</h5>
+            <div class="bar" style="--w:65%"></div>
+            <div class="bar" style="--w:40%"></div>
+            <div class="bar" style="--w:80%"></div>
+          </div>
+          <div class="mock-card">
+            <h5>Memory</h5>
+            <div class="node-row"><span class="node"></span><span class="node"></span><span class="node"></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="features" id="features">
+  <span class="pill">Features</span>
+  <h2>Everything in one place</h2>
+  <p class="section-sub">Forget juggling apps — Donna keeps your day together.</p>
+  <div class="grid">
+    <div class="feature">
+      <h3>Chat that remembers</h3>
+      <p>Talk to Donna like a person. She keeps a visible, editable memory of your people, projects, and preferences — and it sharpens with every conversation.</p>
+    </div>
+    <div class="feature">
+      <h3>Proactive notifications</h3>
+      <p>Morning briefings, meeting prep, and follow-up nudges land as native notifications — before you think to ask.</p>
+    </div>
+    <div class="feature">
+      <h3>Docs that write themselves</h3>
+      <p>A recap appears when a meeting ends. A note appears when something important arrives. You just read them.</p>
+    </div>
+    <div class="feature">
+      <h3>Calendar, synced both ways</h3>
+      <p>A personal calendar with two-way Google Calendar sync — Donna can view, create, and move events for you.</p>
+    </div>
+    <div class="feature">
+      <h3>Voice, in and out</h3>
+      <p>Push-to-talk from the desktop, voice notes over WhatsApp — Donna listens, and answers out loud.</p>
+    </div>
+    <div class="feature">
+      <h3>Skills she teaches herself</h3>
+      <p>Recurring recipes become reusable skills Donna can write for herself — and you can read every one.</p>
+    </div>
+  </div>
+</section>
+
+<section class="integrations" id="integrations">
+  <span class="pill">Integrations</span>
+  <h2>Connects to the tools<br />you already use</h2>
+  <div class="logo-grid">
+    <div class="tile"><img src="assets/gmail.svg" alt="Gmail" /><span>Gmail</span></div>
+    <div class="tile"><img src="assets/gcal.svg" alt="Google Calendar" /><span>Calendar</span></div>
+    <div class="tile"><img src="assets/gdrive.svg" alt="Google Drive" /><span>Drive</span></div>
+    <div class="tile"><img src="assets/slack.svg" alt="Slack" /><span>Slack</span></div>
+    <div class="tile"><img src="assets/whatsapp.svg" alt="WhatsApp" /><span>WhatsApp</span></div>
+    <div class="tile"><span class="monogram">F</span><span>Fathom</span></div>
+    <div class="tile"><span class="monogram">D</span><span>Discord</span></div>
+    <div class="tile more"><span>More on the roadmap</span></div>
+  </div>
+</section>
+
+<section class="privacy" id="privacy">
+  <span class="pill">Privacy</span>
+  <h2>Runs on your machine.<br />Stays on your machine.</h2>
+  <div class="privacy-grid">
+    <div class="privacy-card"><h3>Local first</h3><p>Chats, memory, and docs live in a database on your device — not on someone else’s server.</p></div>
+    <div class="privacy-card"><h3>Your keys, your models</h3><p>Use a free local model, or bring your own OpenAI, Anthropic, or Google key — stored in your system keychain.</p></div>
+    <div class="privacy-card"><h3>No telemetry</h3><p>Donna doesn’t phone home. When data must leave your device — a cloud model, an integration — she tells you.</p></div>
+    <div class="privacy-card"><h3>Open source</h3><p>MIT-licensed and auditable, top to bottom. If you can read code, you can check every claim on this page.</p></div>
+  </div>
+</section>
+
+<section class="faq" id="faq">
+  <span class="pill">FAQ</span>
+  <h2>Questions, answered</h2>
+  <details id="faq-open">
+    <summary>macOS says “Donna can’t be opened” — what now?</summary>
+    <p>Donna isn’t code-signed with Apple yet (that costs $99/year — it’s coming). The first time only: open <strong>System Settings → Privacy &amp; Security</strong>, scroll down, and click <strong>Open Anyway</strong> next to Donna. After that she opens normally.</p>
+  </details>
+  <details>
+    <summary>Windows shows “Windows protected your PC”</summary>
+    <p>Same reason — no paid certificate yet. Click <strong>More info</strong>, then <strong>Run anyway</strong>. Once, and only once.</p>
+  </details>
+  <details>
+    <summary>Is it really free?</summary>
+    <p>Yes. Donna is open source (MIT). With a local model everything is free and private. If you want a frontier model instead, you pay your own API usage — to the provider, not to us.</p>
+  </details>
+  <details>
+    <summary>Which AI does Donna use?</summary>
+    <p>Your choice. On first launch she can set up a free local model that runs entirely on your machine, or you can paste an OpenAI, Anthropic, or Google API key. Switch anytime in Settings.</p>
+  </details>
+  <details>
+    <summary>Can Donna work while my computer is off?</summary>
+    <p>Out of the box she works whenever your computer is awake (she keeps running in the menu bar). For a true 24/7 assistant you can self-host her brain on any always-on box — see the <a href="https://github.com/duckyquang/Donna#server-first-architecture">self-hosting guide</a>.</p>
+  </details>
+</section>
+
+<footer class="footer">
+  <div class="brand"><img src="assets/donna-icon.png" alt="" /><span>Donna</span></div>
+  <p>The assistant that’s actually yours.</p>
+  <div class="footer-links">
+    <a href="https://github.com/duckyquang/Donna">GitHub</a>
+    <a href="https://github.com/duckyquang/Donna/blob/main/LICENSE">MIT License</a>
+    <a href="https://github.com/duckyquang/Donna/issues">Report an issue</a>
+  </div>
+</footer>
+
+<script src="main.js"></script>
+</body>
+</html>

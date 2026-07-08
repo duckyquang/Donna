@@ -61,6 +61,43 @@ fn exe_path(dir: &Path) -> PathBuf {
     }
 }
 
+/// Extract a downloaded runtime archive into `dir`.
+///
+/// Dispatches on filename rather than shelling out to a single `tar -xf`: GNU tar (Linux)
+/// only reads `.tar.zst` by piping through an external `zstd` binary, which upstream's own
+/// `install.sh` hard-requires and which we cannot assume is on a user's machine. Decoding
+/// `.tar.zst` and `.tgz` in-process with `ruzstd`/`flate2` avoids that dependency entirely.
+/// `tar::Archive::unpack` preserves unix file modes, which the `ollama` binary needs to stay
+/// executable. Windows' `.zip` asset is left to the `tar` (bsdtar) shell-out, which System32
+/// has shipped since Windows 10.
+fn extract_archive(archive: &Path, dir: &Path) -> Result<(), String> {
+    let name = archive.to_string_lossy();
+    if name.ends_with(".tar.zst") {
+        let file = std::fs::File::open(archive).map_err(|e| e.to_string())?;
+        let dec = ruzstd::decoding::StreamingDecoder::new(file).map_err(|e| e.to_string())?;
+        tar::Archive::new(dec).unpack(dir).map_err(|e| e.to_string())?;
+    } else if name.ends_with(".tgz") || name.ends_with(".tar.gz") {
+        let file = std::fs::File::open(archive).map_err(|e| e.to_string())?;
+        let dec = flate2::read::GzDecoder::new(file);
+        tar::Archive::new(dec).unpack(dir).map_err(|e| e.to_string())?;
+    } else {
+        let out = std::process::Command::new("tar")
+            .arg("-xf")
+            .arg(archive)
+            .arg("-C")
+            .arg(dir)
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            return Err(format!(
+                "runtime extract failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            ));
+        }
+    }
+    Ok(())
+}
+
 async fn list_models() -> Option<Vec<String>> {
     let v: serde_json::Value = reqwest::Client::new()
         .get(format!("{OLLAMA_URL}/api/tags"))
@@ -108,8 +145,17 @@ pub async fn ollama_install(app: tauri::AppHandle) -> Result<(), String> {
     let mut stream = res.bytes_stream();
     let mut done: u64 = 0;
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| e.to_string())?;
-        file.write_all(&chunk).map_err(|e| e.to_string())?;
+        let chunk = match chunk {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = std::fs::remove_file(&archive);
+                return Err(e.to_string());
+            }
+        };
+        if let Err(e) = file.write_all(&chunk) {
+            let _ = std::fs::remove_file(&archive);
+            return Err(e.to_string());
+        }
         done += chunk.len() as u64;
         let _ = app.emit(
             "ollama:progress",
@@ -122,20 +168,9 @@ pub async fn ollama_install(app: tauri::AppHandle) -> Result<(), String> {
         );
     }
     drop(file);
-    // One extraction path everywhere: macOS/Linux tar reads .tgz natively, and
-    // Windows ships bsdtar (zip-capable) in System32 since Windows 10.
-    let out = std::process::Command::new("tar")
-        .arg("-xf")
-        .arg(&archive)
-        .arg("-C")
-        .arg(&dir)
-        .output()
-        .map_err(|e| e.to_string())?;
-    if !out.status.success() {
-        return Err(format!(
-            "runtime extract failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        ));
+    if let Err(e) = extract_archive(&archive, &dir) {
+        let _ = std::fs::remove_file(&archive);
+        return Err(e);
     }
     let _ = std::fs::remove_file(&archive);
     if !exe_path(&dir).exists() {
@@ -149,16 +184,39 @@ pub async fn ollama_start(app: tauri::AppHandle) -> Result<(), String> {
     if list_models().await.is_some() {
         return Ok(()); // an Ollama (user's own or ours) is already serving
     }
-    let exe = exe_path(&runtime_dir(&app));
-    let mut cmd = std::process::Command::new(&exe);
-    cmd.arg("serve").env("OLLAMA_HOST", "127.0.0.1:11434");
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    // Guard against a second concurrent `ollama_start` orphaning the first child: if we
+    // already hold a live child, skip spawning and fall through to the readiness poll.
+    // The lock is only ever held for this synchronous check, never across an `.await`.
+    let already_running = {
+        let state = app.state::<OllamaState>();
+        let mut guard = state.0.lock().unwrap();
+        match guard.as_mut() {
+            Some(child) => match child.try_wait() {
+                Ok(None) => true,           // still running, don't spawn another
+                Ok(Some(_)) => {            // exited (already reaped by try_wait), replace it
+                    *guard = None;
+                    false
+                }
+                Err(_) => {                 // couldn't check; assume dead, replace it
+                    *guard = None;
+                    false
+                }
+            },
+            None => false,
+        }
+    };
+    if !already_running {
+        let exe = exe_path(&runtime_dir(&app));
+        let mut cmd = std::process::Command::new(&exe);
+        cmd.arg("serve").env("OLLAMA_HOST", "127.0.0.1:11434");
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+        }
+        let child = cmd.spawn().map_err(|e| e.to_string())?;
+        *app.state::<OllamaState>().0.lock().unwrap() = Some(child);
     }
-    let child = cmd.spawn().map_err(|e| e.to_string())?;
-    *app.state::<OllamaState>().0.lock().unwrap() = Some(child);
     for _ in 0..40 {
         if list_models().await.is_some() {
             return Ok(());
@@ -208,6 +266,7 @@ pub async fn ollama_pull(app: tauri::AppHandle, model: String) -> Result<(), Str
 pub fn kill(app: &tauri::AppHandle) {
     if let Some(mut child) = app.state::<OllamaState>().0.lock().unwrap().take() {
         let _ = child.kill();
+        let _ = child.wait(); // reap so unix doesn't leave a zombie
     }
 }
 
@@ -223,5 +282,48 @@ mod tests {
         assert_eq!(asset_name("linux", "x86_64"), Some("ollama-linux-amd64.tar.zst"));
         assert_eq!(asset_name("linux", "aarch64"), Some("ollama-linux-arm64.tar.zst"));
         assert_eq!(asset_name("freebsd", "x86_64"), None);
+    }
+
+    #[test]
+    fn extracts_tgz_in_process() {
+        // Build a tiny in-memory .tgz containing one executable file `ollama`.
+        let mut tar_gz = Vec::new();
+        {
+            let enc = flate2::write::GzEncoder::new(&mut tar_gz, flate2::Compression::default());
+            let mut builder = tar::Builder::new(enc);
+            let data = b"#!/bin/sh\necho fake ollama\n";
+            let mut header = tar::Header::new_gnu();
+            header.set_path("ollama").unwrap();
+            header.set_size(data.len() as u64);
+            header.set_mode(0o755);
+            header.set_cksum();
+            builder.append(&header, &data[..]).unwrap();
+            builder.into_inner().unwrap().finish().unwrap();
+        }
+
+        let dir = std::env::temp_dir().join(format!(
+            "donna-ollama-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let archive = dir.join("ollama-darwin.tgz");
+        std::fs::write(&archive, &tar_gz).unwrap();
+
+        extract_archive(&archive, &dir).expect("extraction should succeed");
+
+        let extracted = dir.join("ollama");
+        assert!(extracted.exists());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&extracted).unwrap().permissions().mode();
+            assert_eq!(mode & 0o100, 0o100, "owner-exec bit should be preserved");
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -4,7 +4,8 @@ import { Check, RefreshCw, Trash2 } from "lucide-react";
 import { PageShell } from "../components/PageShell";
 import { PROVIDERS, type ProviderId } from "../lib/models/providers";
 import { api, type AutonomyLevel, type TrustPolicy } from "../lib/api";
-import { serverConfig, setServerConfig, serverReachable } from "../lib/server";
+import { serverConfig, setServerConfig, serverReachable, type EmbeddedStatus } from "../lib/server";
+import { invoke } from "@tauri-apps/api/core";
 import { useConfig } from "../lib/useConfig";
 import { Button, Spinner } from "../components/ui";
 
@@ -105,6 +106,24 @@ export default function Settings() {
     setTestResult(null);
     try {
       setTestResult((await serverReachable()) ? "ok" : "fail");
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const useBuiltIn = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const s = await invoke<EmbeddedStatus>("embedded_server_status").catch(() => null);
+      if (s && s.status === "ready") {
+        setServerUrl(s.url);
+        setServerToken(s.token);
+        setServerConfig({ url: s.url, token: s.token });
+        setTestResult((await serverReachable()) ? "ok" : "fail");
+      } else {
+        setTestResult("fail");
+      }
     } finally {
       setTesting(false);
     }
@@ -227,7 +246,8 @@ export default function Settings() {
           <div>
             <h2 className="text-sm font-medium text-gray-300">Server</h2>
             <p className="text-xs text-gray-500">
-              Donna's brain runs in donna-server. Point the desktop app at it.
+              Donna ships with a built-in brain that runs automatically. Point her at a
+              remote donna-server only if you self-host one.
             </p>
           </div>
           <label className="block">
@@ -253,6 +273,9 @@ export default function Settings() {
             <Button variant="ghost" onClick={testConnection} disabled={testing}>
               {testing ? <Spinner /> : <RefreshCw size={16} />}
               Test connection
+            </Button>
+            <Button variant="ghost" onClick={useBuiltIn} disabled={testing}>
+              Use built-in server
             </Button>
             {testResult === "ok" && <span className="text-xs text-green-400">Connected ✓</span>}
             {testResult === "fail" && <span className="text-xs text-red-400">Unreachable</span>}

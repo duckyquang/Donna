@@ -50,9 +50,17 @@ Set the embedding model in **Settings** (default: `nomic-embed-text`). Donna ind
 
 ## Release builds (CI)
 
-Tagged releases (`v*`) trigger `.github/workflows/release.yml`, which builds macOS (Apple Silicon + Intel), Linux, and Windows installers and attaches them to a GitHub Release draft.
+Tagged releases (`v*`) trigger `.github/workflows/release.yml`, which builds the
+donna-server sidecar plus macOS (Apple Silicon + Intel), Linux, and Windows
+installers, signs the update artifacts, and attaches everything (including
+`latest.json` for the in-app updater) to a GitHub Release draft.
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```
+
+Then open the draft release on GitHub and **publish** it — the in-app updater and
+the landing page's download buttons both read `releases/latest`, which only sees
+published releases. Requires the `TAURI_SIGNING_PRIVATE_KEY` and
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repo secrets (from `tauri signer generate`).

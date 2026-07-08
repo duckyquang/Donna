@@ -7,6 +7,8 @@
 Donna learns about *you*, connects to *your* tools, and gets work done the way you would.
 She runs on your machine. Your data stays yours.
 
+**[Download Donna →](https://duckyquang.github.io/Donna/)**
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri-24C8DB.svg)](https://tauri.app/)
 [![Local models via Ollama](https://img.shields.io/badge/Local%20models-Ollama-000000.svg)](https://ollama.com/)
@@ -57,31 +59,19 @@ summarizing before you ask — all from an app running on your own computer.
 
 ## Quick start (for everyone)
 
-No coding required. Three steps.
+No coding required. One download.
 
-### 1. Install Donna
-Download the installer for your operating system from the
-[Releases page](https://github.com/duckyquang/Donna/releases) and open it.
+1. **Download Donna** from the [landing page](https://duckyquang.github.io/Donna/)
+   (or grab an installer from [Releases](https://github.com/duckyquang/Donna/releases/latest)).
+2. **Open it.** First launch on macOS: System Settings → Privacy & Security →
+   **Open Anyway** (Donna isn't Apple-notarized yet). On Windows: **More info → Run
+   anyway**. Once, and only once.
+3. **Follow the onboarding.** Donna sets up her own brain — a free local model
+   downloaded for you, or your own OpenAI/Anthropic/Google API key — then connects
+   your tools from the Integrations page.
 
-> _Note: packaged installers arrive as development progresses. Until then, see
-> [For developers](#-for-developers) to run Donna from source._
-
-### 2. Choose your AI brain
-On first launch, the onboarding wizard asks how you want Donna to think:
-
-- **Free & private (recommended to start):** Install [Ollama](https://ollama.com/), then
-  let Donna download a local model like **Qwen**, **Llama**, or **Gemma** with one click.
-  Nothing leaves your computer.
-- **Frontier quality:** Paste your own API key for **OpenAI**, **Anthropic**, or
-  **Google**. Your key is stored securely in your system keychain.
-
-You can switch any time in **Settings**.
-
-### 3. Connect your tools
-Open **Integrations** and click to connect Google, Slack, WhatsApp, or Fathom. Donna
-guides you through a secure sign-in — no config files to edit.
-
-That's it. Say hi to Donna in the **Chat** tab. 👋
+Everything else — her server, her memory, updates — is built in and automatic. Say
+hi in the **Chat** tab.
 
 ---
 
@@ -117,7 +107,13 @@ See [`CONTEXT.md`](CONTEXT.md) for the full integration and auth design.
 
 ---
 
-## Server-first architecture
+<a id="server-first-architecture"></a>
+## Self-hosting the server (advanced)
+
+Donna ships with her brain built in — the app runs a bundled `donna-server`
+automatically, so most people never think about it. Self-hosting is for power users
+who want a 24/7 assistant that works while their computer sleeps: run `donna-server`
+on any always-on box and point **Settings → Server** at it.
 
 Donna is evolving from a desktop-only app into a 24/7 assistant: an always-on
 `donna-server` process now owns the database, knowledge base, and scheduler, and hosts
@@ -172,7 +168,10 @@ cd Donna
 # 2. Install frontend dependencies
 npm install
 
-# 3. Run the app in development
+# 3. Build the donna-server sidecar (rerun after server changes)
+npm run sidecar
+
+# 4. Run the app in development
 npm run tauri dev
 ```
 
@@ -205,6 +204,7 @@ the full roadmap.
 - **Phase 2 — Integrations:** Google Workspace, calendar sync, Slack, Fathom ✅
 - **Phase 3 — Proactive:** background scheduler, notifications, auto-docs, routines ✅
 - **Phase 4 — Learning:** memory retrieval, autonomy tiers, custom routines ✅
+- **Packaged app + landing page:** embedded server, hands-free onboarding, auto-updates, GitHub Pages site ✅
 
 Full details in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 

@@ -5,6 +5,7 @@
 mod commands;
 mod quick_chat;
 mod embedded_server;
+mod ollama;
 
 pub use donna_core::{error, knowledge, secrets};
 
@@ -28,6 +29,10 @@ pub fn run() {
             // Embedded brain: spawn the bundled donna-server so end users need zero setup.
             app.manage(crate::embedded_server::EmbeddedState::default());
             crate::embedded_server::start(app.handle().clone());
+
+            // Managed Ollama runtime: lets onboarding install/run/pull local models
+            // without a terminal (see src-tauri/src/ollama.rs).
+            app.manage(crate::ollama::OllamaState::default());
 
             // Register Cmd+D global shortcut for the quick-chat overlay
             {
@@ -97,13 +102,19 @@ pub fn run() {
             commands::project_read_file,
             commands::project_write_file,
             commands::project_status_report,
+            commands::open_url,
             embedded_server::embedded_server_status,
+            ollama::ollama_status,
+            ollama::ollama_install,
+            ollama::ollama_start,
+            ollama::ollama_pull,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Donna")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 crate::embedded_server::kill(app);
+                crate::ollama::kill(app);
             }
         });
 }

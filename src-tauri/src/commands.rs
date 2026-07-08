@@ -110,6 +110,15 @@ pub async fn project_open_in_editor(path: String) -> Result<()> {
     Ok(())
 }
 
+/// Open an https URL in the default browser (onboarding's "Get Ollama" fallback).
+#[tauri::command]
+pub fn open_url(url: String) -> Result<()> {
+    if !url.starts_with("https://") {
+        return Err("only https urls can be opened".into());
+    }
+    open::that(url).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn project_list_files(project_path: String) -> Result<Vec<ProjectFile>> {
     let root = std::path::Path::new(&project_path);

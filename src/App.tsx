@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { WifiOff } from "lucide-react";
+import { check, type Update } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import DesktopRequired from "./components/DesktopRequired";
 import { Sidebar } from "./components/Sidebar";
 import { useConfig } from "./lib/useConfig";
@@ -19,6 +21,40 @@ import MindMap from "./routes/MindMap";
 import Integrations from "./routes/Integrations";
 import Settings from "./routes/Settings";
 import Onboarding from "./routes/Onboarding";
+
+function UpdateBanner() {
+  const [update, setUpdate] = useState<Update | null>(null);
+  const [installing, setInstalling] = useState(false);
+
+  useEffect(() => {
+    // Offline / rate-limited / dev builds: silently skip, try again next launch.
+    check()
+      .then((u) => u && setUpdate(u))
+      .catch(() => {});
+  }, []);
+
+  if (!update) return null;
+  return (
+    <div className="flex items-center justify-center gap-3 border-b border-donna-accent/30 bg-donna-accent/10 px-4 py-2 text-xs text-gray-200">
+      <span>Donna {update.version} is available.</span>
+      <button
+        disabled={installing}
+        onClick={async () => {
+          setInstalling(true);
+          try {
+            await update.downloadAndInstall();
+            await relaunch();
+          } catch {
+            setInstalling(false);
+          }
+        }}
+        className="rounded border border-donna-accent/50 px-2 py-0.5 font-medium text-gray-100 hover:bg-donna-accent/20"
+      >
+        {installing ? "Updating…" : "Update & restart"}
+      </button>
+    </div>
+  );
+}
 
 export default function App() {
   const { config, loading } = useConfig();
@@ -79,6 +115,7 @@ export default function App() {
 
   return (
     <div className="flex h-full w-full flex-col">
+      <UpdateBanner />
       {!reachable && (
         <div className="flex items-center justify-center gap-3 border-b border-red-500/30 bg-red-500/10 px-4 py-2 text-xs text-red-300">
           <WifiOff size={14} />

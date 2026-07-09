@@ -17,7 +17,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 donna-core = { path = "../crates/donna-core" }
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2"
 serde = { workspace = true }
@@ -34,9 +34,15 @@ sha2 = "0.10"
 base64 = "0.22"
 rand = "0.8"
 url = "2"
+tar = { workspace = true }
+flate2 = { workspace = true }
+ruzstd = "0.8"
 serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "model", "rustls_backend", "cache"] }
 tokio-util = "0.7"
 tauri-plugin-global-shortcut = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

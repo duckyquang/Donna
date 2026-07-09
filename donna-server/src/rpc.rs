@@ -135,6 +135,10 @@ async fn dispatch(st: &AppState, cmd: &str, a: &Value) -> Result<Value, String> 
         "get_doc" => ok!(ops::get_doc(db, arg(&a, "id")?)),
         "delete_doc" => ok!(ops::delete_doc(db, arg(&a, "id")?)),
 
+        // --- Skills ---
+        "skills_list" => ok!(ops::skills_list()),
+        "skill_view" => ok!(ops::skill_view(arg(&a, "name")?, arg(&a, "path")?)),
+
         // --- Gmail & Drive ---
         "gmail_list_messages" => ok!(ops::gmail_list_messages(arg(&a, "maxResults")?).await),
         "gmail_create_draft" => ok!(ops::gmail_create_draft(arg(&a, "to")?, arg(&a, "subject")?, arg(&a, "body")?).await),
@@ -166,6 +170,8 @@ async fn dispatch(st: &AppState, cmd: &str, a: &Value) -> Result<Value, String> 
         "whatsapp_set_credentials" => ok!(ops::whatsapp_set_credentials(arg(&a, "accessToken")?, arg(&a, "phoneNumberId")?)),
         "whatsapp_disconnect" => ok!(ops::whatsapp_disconnect()),
         "whatsapp_send_message" => ok!(ops::whatsapp_send_message(arg(&a, "to")?, arg(&a, "text")?).await),
+        "whatsapp_set_my_number" => ok!(ops::whatsapp_set_my_number(db, arg(&a, "number")?)),
+        "whatsapp_get_my_number" => ok!(ops::whatsapp_get_my_number(db)),
 
         // --- Projects (DB-side) ---
         "project_list" => ok!(ops::project_list(db).await),
@@ -198,6 +204,11 @@ async fn dispatch(st: &AppState, cmd: &str, a: &Value) -> Result<Value, String> 
         "habit_list" => ok!(ops::habit_list(db).await),
         "habit_log" => ok!(ops::habit_log(db, arg(&a, "habit_id")?, arg(&a, "note")?).await),
         "habit_logged_today" => ok!(ops::habit_logged_today(db, arg(&a, "habit_id")?).await),
+
+        // --- Events & suggestions ---
+        "recent_events" => ok!(ops::recent_events(db, arg(&a, "limit")?)),
+        "suggestions_list" => ok!(ops::suggestions_list(db, arg(&a, "pendingOnly")?)),
+        "suggestion_respond" => ok!(ops::suggestion_respond(db, arg(&a, "id")?, arg(&a, "accept")?).await),
 
         _ => return Err(UNKNOWN.to_string()),
     };

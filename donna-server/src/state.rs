@@ -6,6 +6,11 @@ pub struct AppState {
     pub db: Arc<Db>,
     pub token: String,
     pub events: tokio::sync::broadcast::Sender<ServerEvent>,
+    /// Meta webhook GET-handshake token. `None` → the verify endpoint always 403s.
+    pub wa_verify_token: Option<String>,
+    /// Meta app secret for HMAC-SHA256 signature verification of inbound POSTs.
+    /// `None` → inbound webhooks are ignored (200, no processing): secure by default.
+    pub wa_app_secret: Option<String>,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -34,10 +39,15 @@ pub fn test_state() -> AppState {
         uniq()
     ));
     std::fs::create_dir_all(&dir).unwrap();
+    // Belt-and-braces: keep server tests off the real OS keychain too. `init` is a
+    // set-once no-op if a store was already installed in this process.
+    donna_core::secrets::init(Box::new(donna_core::secrets::FileStore::new(dir.join("secrets.json"))));
     AppState {
         db: Arc::new(Db::open(&dir.join("t.sqlite")).unwrap()),
         token: "test-token".into(),
         events: tokio::sync::broadcast::channel(64).0,
+        wa_verify_token: Some("test-verify".into()),
+        wa_app_secret: Some("test-secret".into()),
     }
 }
 

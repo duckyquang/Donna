@@ -57,16 +57,17 @@ async fn tick(db: &Db, notifier: &Arc<dyn Notifier>) -> Result<()> {
     let routines = db.list_routines()?;
     // Prefer the user's configured timezone; fall back to the system-local one
     // when the setting is unset or fails to parse as a `chrono_tz::Tz`.
-    let (due, now_utc_rfc3339) = match configured_tz(db) {
+    // `today` is the tz-aware calendar date (YYYY-MM-DD), used as the nightly-review guard.
+    let (due, now_utc_rfc3339, today) = match configured_tz(db) {
         Some(tz) => {
             let now = Utc::now().with_timezone(&tz);
             let due = collect_due_routines(db, &routines, now).await?;
-            (due, now.with_timezone(&Utc).to_rfc3339())
+            (due, now.with_timezone(&Utc).to_rfc3339(), now.date_naive().to_string())
         }
         None => {
             let now = Local::now();
             let due = collect_due_routines(db, &routines, now).await?;
-            (due, now.with_timezone(&Utc).to_rfc3339())
+            (due, now.with_timezone(&Utc).to_rfc3339(), now.date_naive().to_string())
         }
     };
 
@@ -77,6 +78,7 @@ async fn tick(db: &Db, notifier: &Arc<dyn Notifier>) -> Result<()> {
     }
 
     fire_due_reminders(db, notifier, &now_utc_rfc3339)?;
+    maybe_run_daily_review(db, &today).await;
     Ok(())
 }
 
@@ -89,6 +91,21 @@ fn fire_due_reminders(db: &Db, notifier: &Arc<dyn Notifier>, now_rfc3339: &str) 
         db.mark_reminder_fired(r.id)?;
     }
     Ok(())
+}
+
+/// Run the nightly background review at most once per calendar day. Guarded by the
+/// `last_review_day` setting compared against the tz-aware `today` (YYYY-MM-DD): only runs
+/// when it changes, and the day key is written only after the review returns, so a crash
+/// mid-review just retries on the next tick.
+///
+/// ponytail: nightly is enough; a post-session trigger can be added when sessions are cheap
+/// to detect server-side.
+async fn maybe_run_daily_review(db: &Db, today: &str) {
+    if db.get_setting("last_review_day").ok().flatten().as_deref() == Some(today) {
+        return;
+    }
+    let _ = crate::review::run_background_review(db).await;
+    let _ = db.set_setting("last_review_day", today);
 }
 
 async fn collect_due_routines<Tz: TimeZone>(
@@ -232,6 +249,13 @@ async fn recently_ended_meetings(within_minutes: i32) -> Result<Vec<google::Cale
     google::list_events(&start.to_rfc3339(), &now.to_rfc3339()).await
 }
 
+/// True when the model decided there's nothing worth surfacing: empty/whitespace-only
+/// content, or a `[SILENT]` sentinel (case-insensitive) at the start.
+fn is_silent(content: &str) -> bool {
+    let trimmed = content.trim();
+    trimmed.is_empty() || trimmed.to_ascii_uppercase().starts_with("[SILENT]")
+}
+
 async fn execute_routine(db: &Db, notifier: &Arc<dyn Notifier>, item: &DueRoutine) -> Result<()> {
     let provider = db
         .get_setting("provider")?
@@ -268,7 +292,9 @@ async fn execute_routine(db: &Db, notifier: &Arc<dyn Notifier>, item: &DueRoutin
             role: "system".into(),
             content: "You are Donna, a proactive personal assistant. Write a helpful, \
                       concise document for the user based on the routine and context. \
-                      Use Markdown headings and bullet points."
+                      Use Markdown headings and bullet points. If, after reviewing the \
+                      context, there is nothing new or worth surfacing to the user right \
+                      now, reply with exactly [SILENT] and nothing else."
                 .into(),
         },
         ChatTurn {
@@ -281,7 +307,13 @@ async fn execute_routine(db: &Db, notifier: &Arc<dyn Notifier>, item: &DueRoutin
     ];
 
     let content = providers::complete(&provider, &model, api_key, &ollama_host, &turns).await?;
-    if content.trim().is_empty() {
+    if is_silent(&content) {
+        // Nothing worth surfacing — still mark the run (and dedupe key, if any) so this
+        // routine doesn't re-fire every 60s tick, exactly like the emit path below.
+        db.mark_routine_run(item.routine.id)?;
+        if let Some(ref key) = item.dedupe_key {
+            db.record_routine_dedupe(item.routine.id, key)?;
+        }
         return Ok(());
     }
 
@@ -481,5 +513,14 @@ mod tests {
         // Later tick still inside the 08:00 minute → already handled, not due again.
         let now = Utc.with_ymd_and_hms(2026, 7, 7, 8, 0, 45).unwrap();
         assert!(!is_due(&routine, &now));
+    }
+
+    #[test]
+    fn is_silent_detects_sentinel_and_empty() {
+        assert!(is_silent(""));
+        assert!(is_silent("   \n "));
+        assert!(is_silent("[SILENT]"));
+        assert!(is_silent("[silent] nothing to report"));
+        assert!(!is_silent("Here is your morning briefing..."));
     }
 }

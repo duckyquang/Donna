@@ -31,25 +31,27 @@ pub fn decide(db: &Db, tool_name: &str) -> Result<Decision> {
 }
 
 /// File an approval request for a tool call: inserts the `approvals` row and a matching
-/// notification, then returns the full inserted row. If an identical call
-/// (conversation, tool, args) is already pending — a model that ignores
-/// `PENDING_APPROVAL` and re-asks — returns the existing row instead of filing a
-/// duplicate row/notification.
+/// notification, then returns the full inserted row plus whether it was newly created
+/// this call. If an identical call (conversation, tool, args) is already pending — a
+/// model that ignores `PENDING_APPROVAL` and re-asks — returns the existing row (with
+/// `false`) instead of filing a duplicate row/notification.
 pub fn request_approval(
     db: &Db,
     conversation_id: i64,
     tool: &str,
     args: &Value,
-) -> Result<Approval> {
+) -> Result<(Approval, bool)> {
     let args_json = serde_json::to_string(args)?;
     if let Some(existing) = db.find_pending_approval(conversation_id, tool, &args_json)? {
-        return Ok(existing);
+        return Ok((existing, false));
     }
     let summary = tools::summarize_call(tool, args);
     let id = db.insert_approval(conversation_id, tool, &args_json, &summary)?;
     db.insert_notification("Approval needed", &summary, None, None)?;
-    db.get_approval(id)?
-        .ok_or_else(|| Error::Provider(format!("approval {id} vanished after insert")))
+    let approval = db
+        .get_approval(id)?
+        .ok_or_else(|| Error::Provider(format!("approval {id} vanished after insert")))?;
+    Ok((approval, true))
 }
 
 #[cfg(test)]
@@ -58,14 +60,14 @@ mod tests {
     use crate::db::Db;
 
     fn test_db() -> Db {
-        let dir = std::env::temp_dir().join(format!("donna-trust-{}-{}", std::process::id(), rand_suffix()));
+        crate::secrets::init_test_file_store();
+        let dir = std::env::temp_dir().join(format!(
+            "donna-trust-{}-{}",
+            std::process::id(),
+            crate::db::unique_test_suffix()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         Db::open(&dir.join("t.sqlite")).unwrap()
-    }
-
-    fn rand_suffix() -> u64 {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64
     }
 
     #[test]
@@ -84,7 +86,7 @@ mod tests {
     #[test]
     fn request_approval_creates_row_and_notification() {
         let db = test_db();
-        let a = request_approval(
+        let (a, created) = request_approval(
             &db,
             7,
             "whatsapp_send_message",
@@ -93,6 +95,7 @@ mod tests {
         .unwrap();
         assert_eq!(a.status, "pending");
         assert!(a.summary.contains("+15550100"));
+        assert!(created, "first call must report newly_created");
         assert!(db
             .list_notifications()
             .unwrap()
@@ -105,10 +108,12 @@ mod tests {
         let db = test_db();
         let args = serde_json::json!({"to":"+15550100","text":"yo"});
 
-        let first = request_approval(&db, 7, "whatsapp_send_message", &args).unwrap();
-        let second = request_approval(&db, 7, "whatsapp_send_message", &args).unwrap();
+        let (first, first_created) = request_approval(&db, 7, "whatsapp_send_message", &args).unwrap();
+        let (second, second_created) = request_approval(&db, 7, "whatsapp_send_message", &args).unwrap();
 
         assert_eq!(first.id, second.id, "identical re-ask must return the same row");
+        assert!(first_created, "first identical call creates the row");
+        assert!(!second_created, "second identical call must report newly_created == false");
         assert_eq!(db.list_approvals(false).unwrap().len(), 1, "no duplicate row");
         assert_eq!(
             db.list_notifications().unwrap().len(),
@@ -118,8 +123,9 @@ mod tests {
 
         // A different args_json for the same tool/conversation still creates a new row.
         let different = serde_json::json!({"to":"+15550199","text":"yo"});
-        let third = request_approval(&db, 7, "whatsapp_send_message", &different).unwrap();
+        let (third, third_created) = request_approval(&db, 7, "whatsapp_send_message", &different).unwrap();
         assert_ne!(third.id, first.id);
+        assert!(third_created);
         assert_eq!(db.list_approvals(false).unwrap().len(), 2);
     }
 }

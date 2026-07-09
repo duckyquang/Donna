@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { WifiOff } from "lucide-react";
+import { check, type Update } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import DesktopRequired from "./components/DesktopRequired";
 import { Sidebar } from "./components/Sidebar";
 import { useConfig } from "./lib/useConfig";
 import { isDesktopApp } from "./lib/tauri";
-import { serverReachable, onServerEvent } from "./lib/server";
+import { serverReachable, onServerEvent, bootstrapServerConfig } from "./lib/server";
 import Chat from "./routes/Chat";
 import Dashboard from "./routes/Dashboard";
 import QuickChat from "./routes/QuickChat";
@@ -13,14 +15,84 @@ import Projects from "./routes/Projects";
 import Productivity from "./routes/Productivity";
 import Notifications from "./routes/Notifications";
 import Docs from "./routes/Docs";
+import Skills from "./routes/Skills";
 import Calendar from "./routes/Calendar";
 import MindMap from "./routes/MindMap";
 import Integrations from "./routes/Integrations";
 import Settings from "./routes/Settings";
 import Onboarding from "./routes/Onboarding";
 
+function UpdateBanner() {
+  const [update, setUpdate] = useState<Update | null>(null);
+  const [installing, setInstalling] = useState(false);
+
+  useEffect(() => {
+    // Offline / rate-limited / dev builds: silently skip, try again next launch.
+    check()
+      .then((u) => u && setUpdate(u))
+      .catch(() => {});
+  }, []);
+
+  if (!update) return null;
+  return (
+    <div className="flex items-center justify-center gap-3 border-b border-donna-accent/30 bg-donna-accent/10 px-4 py-2 text-xs text-gray-200">
+      <span>Donna {update.version} is available.</span>
+      <button
+        disabled={installing}
+        onClick={async () => {
+          setInstalling(true);
+          try {
+            await update.downloadAndInstall();
+            await relaunch();
+          } catch {
+            setInstalling(false);
+          }
+        }}
+        className="rounded border border-donna-accent/50 px-2 py-0.5 font-medium text-gray-100 hover:bg-donna-accent/20"
+      >
+        {installing ? "Updating…" : "Update & restart"}
+      </button>
+    </div>
+  );
+}
+
+function BrainFailure({ onRetry }: { onRetry: () => void }) {
+  const [retrying, setRetrying] = useState(false);
+  return (
+    <div className="flex h-full w-full items-center justify-center bg-donna-bg p-6">
+      <div className="flex flex-col items-center gap-3 text-center">
+        <p className="text-sm text-gray-400">Donna&apos;s brain didn&apos;t start.</p>
+        <button
+          disabled={retrying}
+          onClick={async () => {
+            setRetrying(true);
+            try {
+              await onRetry();
+            } catch {
+              // refresh() failing just means config is still null; the screen stays up.
+            } finally {
+              setRetrying(false);
+            }
+          }}
+          className="rounded border border-white/20 px-2 py-0.5 text-xs font-medium text-gray-200 hover:bg-white/10"
+        >
+          {retrying ? "Retrying…" : "Retry"}
+        </button>
+        <a
+          href="https://github.com/duckyquang/Donna/issues"
+          target="_blank"
+          rel="noreferrer"
+          className="text-xs text-gray-500 underline hover:text-gray-400"
+        >
+          Report a problem
+        </a>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
-  const { config, loading } = useConfig();
+  const { config, loading, refresh } = useConfig();
   const location = useLocation();
   const [reachable, setReachable] = useState(true);
 
@@ -66,6 +138,20 @@ export default function App() {
     );
   }
 
+  // Embedded server never came up (bootstrap failed) — getConfig has no server to ask,
+  // so config is null. Onboarding can't save without a server either, so show a
+  // recovery screen instead of routing into that dead end.
+  if (config === null) {
+    return (
+      <BrainFailure
+        onRetry={async () => {
+          await bootstrapServerConfig({ force: true });
+          await refresh();
+        }}
+      />
+    );
+  }
+
   // First run: send the user through onboarding before showing the app shell.
   const needsOnboarding = !config?.onboarded;
   if (needsOnboarding && location.pathname !== "/onboarding") {
@@ -78,6 +164,7 @@ export default function App() {
 
   return (
     <div className="flex h-full w-full flex-col">
+      <UpdateBanner />
       {!reachable && (
         <div className="flex items-center justify-center gap-3 border-b border-red-500/30 bg-red-500/10 px-4 py-2 text-xs text-red-300">
           <WifiOff size={14} />
@@ -101,6 +188,7 @@ export default function App() {
           <Route path="/productivity" element={<Productivity />} />
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/docs" element={<Docs />} />
+          <Route path="/skills" element={<Skills />} />
           <Route path="/calendar" element={<Calendar />} />
           <Route path="/mind-map" element={<MindMap />} />
           <Route path="/integrations" element={<Integrations />} />

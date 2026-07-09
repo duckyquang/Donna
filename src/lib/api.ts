@@ -36,6 +36,12 @@ export interface AppConfig {
   profileOnboarded: boolean;
   autonomyLevel: AutonomyLevel;
   embedModel: string;
+  /** Model the nightly background review uses; empty means "use `model`". */
+  reviewModel: string;
+  /** TTS voice for spoken replies; empty/invalid falls back to the server default ("nova"). */
+  ttsVoice: string;
+  /** Speak assistant replies aloud after they finish streaming. */
+  speakReplies: boolean;
 }
 
 export interface Routine {
@@ -137,8 +143,36 @@ export interface Message {
 
 export type ChatEvent =
   | { type: "token"; content: string }
-  | { type: "done"; messageId: number }
-  | { type: "error"; message: string };
+  | { type: "done"; message_id: number }
+  | { type: "error"; message: string }
+  | { type: "tool"; name: string; label: string; status: "running" | "done" | "error" }
+  | { type: "approval"; approval_id: number; summary: string; tool: string };
+
+export interface Approval {
+  id: number;
+  conversationId: number;
+  tool: string;
+  argsJson: string;
+  summary: string;
+  status: string;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+export interface Suggestion {
+  id: number;
+  kind: string;
+  title: string;
+  body: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface TrustPolicy {
+  actionKind: string;
+  mode: "ask" | "auto";
+  updatedAt: string;
+}
 
 export interface KgNode {
   id: string;
@@ -267,6 +301,13 @@ export interface QuickChatCtx {
   app_name: string;
 }
 
+export interface Skill {
+  name: string;
+  slug: string;
+  description: string;
+  category: string;
+}
+
 function toEvent(e: RawCalendarEvent): CalendarEvent {
   return {
     id: e.id,
@@ -298,6 +339,9 @@ interface RawConfig {
   profile_onboarded: boolean;
   autonomy_level?: AutonomyLevel;
   embed_model?: string;
+  review_model?: string;
+  tts_voice?: string;
+  speak_replies?: boolean;
 }
 
 interface RawRoutine {
@@ -440,6 +484,67 @@ interface RawMessage {
   created_at: string;
 }
 
+interface RawApproval {
+  id: number;
+  conversation_id: number;
+  tool: string;
+  args_json: string;
+  summary: string;
+  status: string;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+interface RawSuggestion {
+  id: number;
+  kind: string;
+  title: string;
+  body: string;
+  payload_json: string | null;
+  dedup_key: string;
+  status: string;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+interface RawTrustPolicy {
+  action_kind: string;
+  mode: "ask" | "auto";
+  updated_at: string;
+}
+
+function toApproval(a: RawApproval): Approval {
+  return {
+    id: a.id,
+    conversationId: a.conversation_id,
+    tool: a.tool,
+    argsJson: a.args_json,
+    summary: a.summary,
+    status: a.status,
+    createdAt: a.created_at,
+    resolvedAt: a.resolved_at,
+  };
+}
+
+function toSuggestion(s: RawSuggestion): Suggestion {
+  return {
+    id: s.id,
+    kind: s.kind,
+    title: s.title,
+    body: s.body,
+    status: s.status,
+    createdAt: s.created_at,
+  };
+}
+
+function toTrustPolicy(p: RawTrustPolicy): TrustPolicy {
+  return {
+    actionKind: p.action_kind,
+    mode: p.mode,
+    updatedAt: p.updated_at,
+  };
+}
+
 export const api = {
   async getConfig(): Promise<AppConfig> {
     const c = await invoke<RawConfig>("get_config");
@@ -451,6 +556,9 @@ export const api = {
       profileOnboarded: c.profile_onboarded ?? false,
       autonomyLevel: c.autonomy_level ?? "confirm",
       embedModel: c.embed_model ?? "nomic-embed-text",
+      reviewModel: c.review_model ?? "",
+      ttsVoice: c.tts_voice ?? "",
+      speakReplies: c.speak_replies ?? false,
     };
   },
 
@@ -464,6 +572,9 @@ export const api = {
         profile_onboarded: config.profileOnboarded,
         autonomy_level: config.autonomyLevel,
         embed_model: config.embedModel,
+        review_model: config.reviewModel,
+        tts_voice: config.ttsVoice,
+        speak_replies: config.speakReplies,
       },
     });
   },
@@ -539,6 +650,35 @@ export const api = {
         if (t === "done" || t === "error") resolve();
       });
     });
+  },
+
+  // --- Approvals & trust policies ---
+  async approvalsList(): Promise<Approval[]> {
+    const rows = await invoke<RawApproval[]>("approvals_list");
+    return rows.map(toApproval);
+  },
+  async approvalsPendingForConversation(conversationId: number): Promise<Approval[]> {
+    const rows = await invoke<RawApproval[]>("approvals_pending_for_conversation", {
+      conversationId,
+    });
+    return rows.map(toApproval);
+  },
+  approvalRespond(id: number, approve: boolean): Promise<string> {
+    return invoke("approval_respond", { id, approve });
+  },
+  async suggestionsList(pendingOnly: boolean): Promise<Suggestion[]> {
+    const rows = await invoke<RawSuggestion[]>("suggestions_list", { pendingOnly });
+    return rows.map(toSuggestion);
+  },
+  suggestionRespond(id: number, accept: boolean): Promise<string> {
+    return invoke("suggestion_respond", { id, accept });
+  },
+  async trustPoliciesList(): Promise<TrustPolicy[]> {
+    const rows = await invoke<RawTrustPolicy[]>("trust_policies_list");
+    return rows.map(toTrustPolicy);
+  },
+  trustPolicySet(actionKind: string, mode: "ask" | "auto"): Promise<void> {
+    return invoke("trust_policy_set", { actionKind, mode });
   },
 
   async kgGraph(): Promise<KgGraph> {
@@ -757,6 +897,10 @@ export const api = {
     return invoke("delete_doc", { id: Number(id) });
   },
 
+  // --- Skills ---
+  skillsList: () => invoke<Skill[]>("skills_list"),
+  skillView: (name: string, path?: string) => invoke<string>("skill_view", { name, path: path ?? null }),
+
   // --- Gmail & Drive ---
   async gmailListMessages(maxResults = 10): Promise<GmailMessage[]> {
     const rows = await invoke<RawGmailMessage[]>("gmail_list_messages", { maxResults });
@@ -853,6 +997,12 @@ export const api = {
   },
   whatsappSendMessage(to: string, text: string): Promise<void> {
     return invoke("whatsapp_send_message", { to, text });
+  },
+  whatsappSetMyNumber(number: string): Promise<void> {
+    return invoke("whatsapp_set_my_number", { number });
+  },
+  whatsappGetMyNumber(): Promise<string | null> {
+    return invoke("whatsapp_get_my_number");
   },
 
   kgReindexEmbeddings(): Promise<number> {

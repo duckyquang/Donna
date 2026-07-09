@@ -2,6 +2,9 @@
 // (streaming chat + broadcast notifications) instead of Tauri `invoke`. Connection
 // config lives in localStorage so the same build works against localhost or a remote box.
 
+import { invoke } from "@tauri-apps/api/core";
+import { isDesktopApp } from "./tauri";
+
 export interface ServerConfig {
   url: string;
   token: string;
@@ -109,4 +112,38 @@ export function onServerEvent(cb: (f: Frame) => void): () => void {
   eventHandlers.add(cb);
   ensureSocket();
   return () => eventHandlers.delete(cb);
+}
+
+export type EmbeddedStatus =
+  | { status: "starting" }
+  | { status: "ready"; url: string; token: string }
+  | { status: "failed"; error: string };
+
+/**
+ * Adopt the embedded sidecar's {url, token} on first run. No-op when a token is
+ * already stored (remote-server installs) or outside the desktop app. Resolves when
+ * the sidecar is ready, has failed (dev without a sidecar), or ~20s pass.
+ *
+ * `opts.force` is for the "Donna's brain didn't start" retry button: it re-polls and
+ * adopts on ready even if a token is already stored, but only when that stored token
+ * either matches the embedded one or is empty — a differing/remote token is never
+ * clobbered.
+ */
+export async function bootstrapServerConfig(opts?: { force?: boolean }): Promise<void> {
+  if (!isDesktopApp()) return;
+  const storedToken = localStorage.getItem("donna.serverToken");
+  if (storedToken && !opts?.force) return;
+  for (let i = 0; i < 66; i++) {
+    const s = await invoke<EmbeddedStatus>("embedded_server_status").catch(
+      () => ({ status: "failed", error: "no shell" }) as EmbeddedStatus,
+    );
+    if (s.status === "ready") {
+      if (!storedToken || storedToken === s.token) {
+        setServerConfig({ url: s.url, token: s.token });
+      }
+      return;
+    }
+    if (s.status === "failed") return;
+    await new Promise((r) => setTimeout(r, 300));
+  }
 }

@@ -1,4 +1,4 @@
-//! Agent tool registry: the 28 tools the agent loop (Task 5) exposes to the model.
+//! Agent tool registry: the tools the agent loop exposes to the model (see `TOOL_COUNT`).
 //!
 //! Each tool has a [`Risk`] class that the loop uses to gate execution:
 //! - `Read`   — no side effects; run freely.
@@ -21,6 +21,7 @@ use crate::error::{Error, Result};
 use crate::integrations::{google, news, weather};
 use crate::ops;
 use crate::retrieval;
+use crate::skills;
 
 const RESULT_MAX: usize = 6_000;
 
@@ -184,6 +185,21 @@ pub fn all() -> Vec<ToolDef> {
             risk: Risk::Read,
         },
         ToolDef {
+            name: "session_search",
+            description: "Full-text search across the user's entire message history (all past \
+                conversations). Use to recall what the user told you before. Returns matching \
+                messages newest-relevance first.",
+            params: json!({
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "What to search for."},
+                    "limit": {"type": "integer", "description": "How many messages to return (max 25, default 10).", "minimum": 1, "maximum": 25}
+                },
+                "required": ["query"]
+            }),
+            risk: Risk::Read,
+        },
+        ToolDef {
             name: "kb_search",
             description: "Search Donna's knowledge base (the user's saved memories / mind map) \
                 for facts relevant to a query. Returns the top matching memories. Use before \
@@ -239,6 +255,28 @@ pub fn all() -> Vec<ToolDef> {
             params: json!({"type": "object", "properties": {}, "required": []}),
             risk: Risk::Read,
         },
+        ToolDef {
+            name: "skills_list",
+            description: "List all of Donna's available skills (name + description only). Call \
+                this to see what skills exist, then skill_view to load one's full instructions \
+                before acting.",
+            params: json!({"type": "object", "properties": {}, "required": []}),
+            risk: Risk::Read,
+        },
+        ToolDef {
+            name: "skill_view",
+            description: "Load a skill's full SKILL.md instructions by name (or a reference file \
+                via `path`). Read the skill BEFORE acting on it; follow its steps.",
+            params: json!({
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Skill name."},
+                    "path": {"type": "string", "description": "A reference file inside the skill."}
+                },
+                "required": ["name"]
+            }),
+            risk: Risk::Read,
+        },
         // ---- Write ---------------------------------------------------------
         ToolDef {
             name: "kb_save_node",
@@ -254,6 +292,24 @@ pub fn all() -> Vec<ToolDef> {
                     "node_type": {"type": "string", "description": "Kind of node, e.g. 'fact', 'preference', 'person', 'project'."}
                 },
                 "required": ["folder", "label", "note", "node_type"]
+            }),
+            risk: Risk::Write,
+        },
+        ToolDef {
+            name: "memory_update",
+            description: "Update your durable memory about the user. USER.md = stable \
+                identity/preferences (cap 1500 chars); MEMORY.md = active threads/conventions \
+                (cap 2500 chars). 'add' appends a line (errors if full — then consolidate), \
+                'replace' rewrites the whole file, 'remove' deletes lines containing the text. \
+                Keep entries terse.",
+            params: json!({
+                "type": "object",
+                "properties": {
+                    "file": {"type": "string", "enum": ["user", "memory"], "description": "Which file: 'user' (USER.md) or 'memory' (MEMORY.md)."},
+                    "action": {"type": "string", "enum": ["add", "replace", "remove"], "description": "'add' appends a line, 'replace' rewrites the whole file, 'remove' deletes lines containing text."},
+                    "text": {"type": "string", "description": "For 'add'/'remove': a line or substring. For 'replace': the full new file body."}
+                },
+                "required": ["file", "action", "text"]
             }),
             risk: Risk::Write,
         },
@@ -405,6 +461,24 @@ pub fn all() -> Vec<ToolDef> {
                     "prompt": {"type": "string", "description": "The instruction Donna runs each time the routine fires."}
                 },
                 "required": ["name", "schedule_type", "hour", "minute"]
+            }),
+            risk: Risk::Write,
+        },
+        ToolDef {
+            name: "skill_create",
+            description: "Author a new reusable skill as a SKILL.md. Use when you've worked out \
+                a repeatable multi-step recipe worth saving. name = short title; description = \
+                one line for the catalog; category = a grouping; body = step-by-step instructions \
+                in Markdown.",
+            params: json!({
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Short title for the skill."},
+                    "description": {"type": "string", "description": "One line for the catalog."},
+                    "category": {"type": "string", "description": "A grouping for the skill."},
+                    "body": {"type": "string", "description": "Step-by-step instructions in Markdown."}
+                },
+                "required": ["name", "description", "category", "body"]
             }),
             risk: Risk::Write,
         },
@@ -571,6 +645,18 @@ pub async fn execute(db: &Db, name: &str, args: &Value) -> Result<String> {
             let w = weather::fetch(a.lat, a.lon).await?;
             ok(weather::format_summary(&w))
         }
+        "session_search" => {
+            #[derive(Deserialize)]
+            struct A { query: String, #[serde(default = "ten_i64")] limit: i64 }
+            let a: A = parse(name, args)?;
+            #[derive(serde::Serialize)]
+            struct Hit { conversation_id: i64, role: String, content: String, created_at: String }
+            let hits = db.search_messages(&a.query, a.limit.clamp(1, 25))?
+                .into_iter()
+                .map(|m| Hit { conversation_id: m.conversation_id, role: m.role, content: m.content, created_at: m.created_at })
+                .collect::<Vec<_>>();
+            ok(hits)
+        }
         "kb_search" => {
             #[derive(Deserialize)]
             struct A { query: String }
@@ -594,12 +680,25 @@ pub async fn execute(db: &Db, name: &str, args: &Value) -> Result<String> {
         "list_routines" => ok(ops::list_routines(db)?),
         "reading_list_get" => ok(ops::reading_list_get(db).await?),
         "habit_list" => ok(ops::habit_list(db).await?),
+        "skills_list" => ok(skills::list_skills()?),
+        "skill_view" => {
+            #[derive(Deserialize)]
+            struct A { name: String, #[serde(default)] path: Option<String> }
+            let a: A = parse(name, args)?;
+            ok(skills::view_skill(&a.name, a.path.as_deref())?)
+        }
         // ---- Write ------------------------------------------------------
         "kb_save_node" => {
             #[derive(Deserialize)]
             struct A { folder: Vec<String>, label: String, note: String, node_type: String }
             let a: A = parse(name, args)?;
             ok(ops::kg_save_node(db, a.folder, a.label, a.note, a.node_type, None, None).await?)
+        }
+        "memory_update" => {
+            #[derive(Deserialize)]
+            struct A { file: String, action: String, text: String }
+            let a: A = parse(name, args)?;
+            ok(ops::memory_update(db, a.file, a.action, a.text).await?)
         }
         "gmail_create_draft" => {
             #[derive(Deserialize)]
@@ -679,6 +778,12 @@ pub async fn execute(db: &Db, name: &str, args: &Value) -> Result<String> {
             let input: ops::CreateRoutineInput = parse(name, args)?;
             ok(ops::create_routine(db, input)?)
         }
+        "skill_create" => {
+            #[derive(Deserialize)]
+            struct A { name: String, description: String, category: String, body: String }
+            let a: A = parse(name, args)?;
+            ok(skills::save_skill(&a.name, &a.description, &a.category, &a.body)?)
+        }
         // ---- Outbound ---------------------------------------------------
         "slack_send_message" => {
             #[derive(Deserialize)]
@@ -706,6 +811,7 @@ pub async fn execute(db: &Db, name: &str, args: &Value) -> Result<String> {
 }
 
 fn ten() -> u32 { 10 }
+fn ten_i64() -> i64 { 10 }
 fn fifteen() -> usize { 15 }
 
 /// Human one-liner for approval cards / Tool events. Renders every Outbound tool plus
@@ -738,7 +844,12 @@ mod tests {
     use crate::db::Db;
 
     fn test_db() -> Db {
-        let dir = std::env::temp_dir().join(format!("donna-tools-{}", std::process::id()));
+        crate::secrets::init_test_file_store();
+        let dir = std::env::temp_dir().join(format!(
+            "donna-tools-{}-{}",
+            std::process::id(),
+            crate::db::unique_test_suffix()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         Db::open(&dir.join("t.sqlite")).unwrap()
     }
@@ -747,7 +858,11 @@ mod tests {
     // (Read 12 + Donna-reads 5 + Write 11 + Outbound 3). The enumeration is the precise,
     // actionable spec; "28" is an unreconciled round number repeated in the headline.
     // Implementing all 31 named tools rather than arbitrarily dropping 3 the plan lists.
-    const TOOL_COUNT: usize = 31;
+    // Phase 4 Task 1 adds `memory_update` (Write), bringing the total to 32.
+    // Phase 4 Task 2 adds `session_search` (Read), bringing the total to 33.
+    // Phase 6 Task 2 adds `skills_list`, `skill_view` (Read), `skill_create` (Write),
+    // bringing the total to 36.
+    const TOOL_COUNT: usize = 36;
 
     #[tokio::test]
     async fn registry_names_unique_and_schemas_valid() {
@@ -772,10 +887,43 @@ mod tests {
         assert!(err.to_string().contains("unknown tool"));
     }
 
+    #[tokio::test]
+    async fn memory_update_tool_registered_and_dispatches() {
+        let db = test_db();
+        let _kb = crate::knowledge::tests::temp_kb();
+        let out = execute(&db, "memory_update", &serde_json::json!({"file":"user","action":"add","text":"Likes tea"})).await.unwrap();
+        assert!(out.contains("Likes tea"));
+        assert_eq!(all().len(), 36);
+    }
+
     #[test]
     fn truncation_and_summaries() {
         assert!(truncate_result("x".repeat(10_000)).len() < 6_100);
         let s = summarize_call("slack_send_message", &serde_json::json!({"channel":"#general","text":"hi"}));
         assert!(s.contains("#general"));
+    }
+
+    #[tokio::test]
+    async fn session_search_tool() {
+        let db = test_db();
+        let c = db.create_conversation("t").unwrap();
+        db.add_message(c, "user", "remember the wifi password is hunter2").unwrap();
+        let out = execute(&db, "session_search", &serde_json::json!({"query":"wifi password"})).await.unwrap();
+        assert!(out.contains("hunter2"));
+        assert_eq!(all().len(), 36);
+    }
+
+    #[tokio::test]
+    async fn skill_tools_registered_and_dispatch() {
+        let db = test_db();
+        let _g = crate::skills::tests::skills_test_guard();
+        assert_eq!(all().len(), 36);
+        let created = execute(&db, "skill_create", &serde_json::json!({
+            "name":"Trip Planner","description":"Plan a trip","category":"travel","body":"1. Ask dates\n2. ..."})).await.unwrap();
+        assert!(created.contains("trip-planner"));
+        let listed = execute(&db, "skills_list", &serde_json::json!({})).await.unwrap();
+        assert!(listed.contains("Trip Planner"));
+        let viewed = execute(&db, "skill_view", &serde_json::json!({"name":"Trip Planner"})).await.unwrap();
+        assert!(viewed.contains("Ask dates"));
     }
 }

@@ -5,6 +5,7 @@ import { PROVIDERS, type ProviderId } from "../lib/models/providers";
 import { api } from "../lib/api";
 import { useConfig } from "../lib/useConfig";
 import { Button, Spinner } from "../components/ui";
+import LocalBrainSetup, { DEFAULT_LOCAL_MODEL } from "../components/LocalBrainSetup";
 
 const DEFAULT_OLLAMA_HOST = "http://localhost:11434";
 
@@ -16,7 +17,7 @@ export default function Onboarding() {
 
   const [step, setStep] = useState<Step>("provider");
   const [provider, setProvider] = useState<ProviderId>("ollama");
-  const [ollamaHost, setOllamaHost] = useState(DEFAULT_OLLAMA_HOST);
+  const [ollamaHost] = useState(DEFAULT_OLLAMA_HOST);
   const [apiKey, setApiKey] = useState("");
   const [models, setModels] = useState<string[]>([]);
   const [model, setModel] = useState("");
@@ -34,25 +35,9 @@ export default function Onboarding() {
       if (!isLocal && apiKey.trim()) {
         await api.setApiKey(provider, apiKey.trim());
       }
-      if (isLocal) {
-        await api.saveConfig({
-          provider,
-          model: "",
-          ollamaHost,
-          embedModel: "nomic-embed-text",
-          onboarded: false,
-          profileOnboarded: false,
-          autonomyLevel: "confirm",
-        });
-      }
       const list = await api.listModels(provider);
       setModels(list);
       if (list.length > 0) setModel((m) => m || list[0]);
-      if (list.length === 0 && isLocal) {
-        setError(
-          "No local models found. Install Ollama and pull a model (e.g. `ollama pull qwen2.5`), then refresh."
-        );
-      }
     } catch (e) {
       setError(String(e));
     } finally {
@@ -72,6 +57,9 @@ export default function Onboarding() {
         model,
         ollamaHost,
         embedModel: "nomic-embed-text",
+        reviewModel: "",
+        ttsVoice: "",
+        speakReplies: false,
         onboarded: true,
         profileOnboarded: false,
         autonomyLevel: "confirm",
@@ -134,18 +122,15 @@ export default function Onboarding() {
         {step === "configure" && (
           <div className="space-y-4">
             {isLocal ? (
-              <label className="block">
-                <span className="mb-1 block text-sm text-gray-300">Ollama host</span>
-                <input
-                  value={ollamaHost}
-                  onChange={(e) => setOllamaHost(e.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-donna-bg px-3 py-2 text-sm text-white outline-none focus:border-donna-accent"
-                  placeholder={DEFAULT_OLLAMA_HOST}
+              models.length === 0 ? (
+                <LocalBrainSetup
+                  onReady={(list) => {
+                    const found = list.length > 0 ? list : [DEFAULT_LOCAL_MODEL];
+                    setModels(found);
+                    setModel(found[0]);
+                  }}
                 />
-                <span className="mt-1 block text-xs text-gray-500">
-                  Donna talks to your local Ollama server. Nothing leaves your machine.
-                </span>
-              </label>
+              ) : null
             ) : (
               <label className="block">
                 <span className="mb-1 block text-sm text-gray-300">
@@ -164,10 +149,12 @@ export default function Onboarding() {
               </label>
             )}
 
-            <Button variant="ghost" onClick={fetchModels} disabled={loadingModels}>
-              {loadingModels ? <Spinner /> : <RefreshCw size={16} />}
-              {isLocal ? "Detect models" : "Verify key & load models"}
-            </Button>
+            {!isLocal && (
+              <Button variant="ghost" onClick={fetchModels} disabled={loadingModels}>
+                {loadingModels ? <Spinner /> : <RefreshCw size={16} />}
+                Verify key & load models
+              </Button>
+            )}
 
             {models.length > 0 && (
               <label className="block">

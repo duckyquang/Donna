@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Donna",
-  "version": "0.0.0",
+  "version": "0.2.0",
   "identifier": "ai.donna.app",
   "build": {
     "frontendDist": "../dist",
@@ -24,10 +24,19 @@
       "csp": null
     }
   },
-  "plugins": {},
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJENzVBNEM0NTBFM0FDOTQKUldTVXJPTlF4S1IxdmFMV3RJUlNrNkF5ZnBQelpTeXdWdnYvRytCMyt2YzV2L0dMMUFlNG4rT3cK",
+      "endpoints": [
+        "https://github.com/duckyquang/Donna/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
+    "externalBin": ["binaries/donna-server"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

@@ -1,13 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Plus, Send, Trash2 } from "lucide-react";
-import { api, type Conversation, type Message } from "../lib/api";
+import { Check, Mic, Plus, Send, Square, Trash2, X } from "lucide-react";
+import { api, type Approval, type Conversation, type Message } from "../lib/api";
 import { useConfig } from "../lib/useConfig";
-import { Spinner, ThinkingDots } from "../components/ui";
+import { Button, Spinner, ThinkingDots } from "../components/ui";
 import { DonnaMessage } from "../components/DonnaMessage";
 import { hasDonnaQuestions } from "../lib/donnaQuestions";
+import * as voice from "../lib/voice";
 import ProfileOnboarding from "./ProfileOnboarding";
 
 const PLACEHOLDER_TITLE = "New conversation";
+
+interface ToolEvent {
+  name: string;
+  label: string;
+  status: "running" | "done" | "error";
+}
 
 export default function Chat() {
   const { config, save } = useConfig();
@@ -19,6 +26,11 @@ export default function Chat() {
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsProfile, setNeedsProfile] = useState<boolean | null>(null);
+  const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
+  const [pendingApprovals, setPendingApprovals] = useState<Approval[]>([]);
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const recordingRef = useRef<voice.Recording | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const refreshConversations = async () => {
@@ -27,8 +39,14 @@ export default function Chat() {
     return list;
   };
 
-  const loadMessages = async (id: number) => {
-    setMessages(await api.getMessages(id));
+  const loadMessages = async (id: number): Promise<Message[]> => {
+    const rows = await api.getMessages(id);
+    setMessages(rows);
+    return rows;
+  };
+
+  const loadPendingApprovals = async (id: number) => {
+    setPendingApprovals(await api.approvalsPendingForConversation(id));
   };
 
   useEffect(() => {
@@ -39,6 +57,7 @@ export default function Chat() {
         setNeedsProfile(false);
         setActiveId(list[0].id);
         await loadMessages(list[0].id);
+        await loadPendingApprovals(list[0].id);
         return;
       }
       const showProfile = !config.profileOnboarded && list.length === 0;
@@ -46,6 +65,7 @@ export default function Chat() {
       if (!showProfile && list.length > 0) {
         setActiveId(list[0].id);
         await loadMessages(list[0].id);
+        await loadPendingApprovals(list[0].id);
       }
     });
   }, [config, save]);
@@ -59,6 +79,7 @@ export default function Chat() {
     setError(null);
     setStreamingText("");
     await loadMessages(id);
+    await loadPendingApprovals(id);
   };
 
   const newConversation = () => {
@@ -66,6 +87,7 @@ export default function Chat() {
     setMessages([]);
     setStreamingText("");
     setError(null);
+    setPendingApprovals([]);
   };
 
   const removeConversation = async (id: number) => {
@@ -98,25 +120,43 @@ export default function Chat() {
 
       setStreaming(true);
       setStreamingText("");
+      setToolEvents([]);
       try {
         await api.sendChat(convId, (event) => {
           if (event.type === "token") {
             setStreamingText((prev) => prev + event.content);
           } else if (event.type === "error") {
             setError(event.message);
+          } else if (event.type === "tool") {
+            const { name, label, status } = event;
+            setToolEvents((prev) => {
+              const idx = prev.findIndex((t) => t.name === name && t.label === label);
+              if (idx === -1) return [...prev, { name, label, status }];
+              const next = [...prev];
+              next[idx] = { name, label, status };
+              return next;
+            });
+          } else if (event.type === "approval") {
+            loadPendingApprovals(convId);
           }
         });
-        await loadMessages(convId);
+        const finalMessages = await loadMessages(convId);
         await refreshConversations();
+        await loadPendingApprovals(convId);
         api.kgExtract(convId).catch(() => {});
+        if (config?.speakReplies) {
+          const last = finalMessages[finalMessages.length - 1];
+          if (last?.role === "assistant") voice.speak(last.content);
+        }
       } catch (e) {
         setError(String(e));
       } finally {
         setStreaming(false);
         setStreamingText("");
+        setToolEvents([]);
       }
     },
-    [activeId, streaming]
+    [activeId, streaming, config?.speakReplies]
   );
 
   const handleSend = () => {
@@ -128,6 +168,34 @@ export default function Chat() {
 
   const handleQuestionAnswer = (answer: string) => {
     sendMessage(answer);
+  };
+
+  const handleMicClick = async () => {
+    if (recording) {
+      setRecording(false);
+      const rec = recordingRef.current;
+      recordingRef.current = null;
+      if (!rec) return;
+      setTranscribing(true);
+      try {
+        const blob = await rec.stop();
+        const transcript = await voice.transcribeBlob(blob);
+        if (transcript.trim()) sendMessage(transcript);
+      } catch (e) {
+        setError(String(e));
+      } finally {
+        setTranscribing(false);
+      }
+      return;
+    }
+
+    setError(null);
+    try {
+      recordingRef.current = await voice.recordAudio();
+      setRecording(true);
+    } catch (e) {
+      setError(String(e));
+    }
   };
 
   const handleProfileComplete = async (conversationId: number) => {
@@ -218,6 +286,7 @@ export default function Chat() {
                 onQuestionAnswer={m.role === "assistant" ? handleQuestionAnswer : undefined}
               />
             ))}
+            {streaming && toolEvents.length > 0 && <ToolStatusList events={toolEvents} />}
             {streaming && !streamingText && <StreamingPlaceholder />}
             {streaming && streamingText && (
               <Bubble
@@ -232,6 +301,23 @@ export default function Chat() {
                 {error}
               </p>
             )}
+            {!streaming &&
+              pendingApprovals.map((a) => (
+                <ApprovalCard
+                  key={a.id}
+                  approval={a}
+                  onResolved={() => {
+                    setPendingApprovals((prev) => prev.filter((p) => p.id !== a.id));
+                    if (activeId !== null) {
+                      const convId = activeId;
+                      setTimeout(() => {
+                        loadMessages(convId);
+                        loadPendingApprovals(convId);
+                      }, 800);
+                    }
+                  }}
+                />
+              ))}
           </div>
         </div>
 
@@ -251,6 +337,18 @@ export default function Chat() {
               className="max-h-40 flex-1 resize-none rounded-xl border border-white/10 bg-donna-bg px-4 py-3 text-sm text-white outline-none focus:border-donna-accent"
             />
             <button
+              onClick={handleMicClick}
+              disabled={transcribing}
+              title={recording ? "Stop recording" : "Record a voice message"}
+              className={`flex h-11 w-11 items-center justify-center rounded-xl border transition-colors disabled:opacity-40 ${
+                recording
+                  ? "animate-pulse border-red-500 bg-red-500/20 text-red-400"
+                  : "border-white/10 text-gray-300 hover:bg-white/10"
+              }`}
+            >
+              {transcribing ? <Spinner /> : recording ? <Square size={16} /> : <Mic size={18} />}
+            </button>
+            <button
               onClick={handleSend}
               disabled={streaming || !input.trim()}
               className="flex h-11 w-11 items-center justify-center rounded-xl bg-donna-accent text-white transition-colors hover:bg-donna-accent-hover disabled:opacity-40"
@@ -269,6 +367,58 @@ function StreamingPlaceholder() {
     <div className="flex justify-start">
       <div className="rounded-2xl border border-white/10 bg-donna-surface px-4 py-3">
         <ThinkingDots />
+      </div>
+    </div>
+  );
+}
+
+function ToolStatusList({ events }: { events: ToolEvent[] }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      {events.map((t, i) => (
+        <div
+          key={`${t.name}-${t.label}-${i}`}
+          className="flex w-fit items-center gap-2 rounded-lg border border-white/10 bg-donna-surface px-3 py-1.5 text-xs text-gray-300"
+        >
+          {t.status === "running" && <Spinner className="h-3 w-3" />}
+          {t.status === "done" && <Check size={12} className="text-green-400" />}
+          {t.status === "error" && <X size={12} className="text-red-400" />}
+          <span>{t.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ApprovalCard({
+  approval,
+  onResolved,
+}: {
+  approval: Approval;
+  onResolved: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  const respond = async (approve: boolean) => {
+    setBusy(true);
+    try {
+      await api.approvalRespond(approval.id, approve);
+      onResolved();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-donna-accent/30 bg-donna-accent/5 p-4">
+      <p className="text-sm text-white">{approval.summary}</p>
+      <div className="mt-3 flex gap-2">
+        <Button size="sm" variant="success" disabled={busy} onClick={() => respond(true)}>
+          Approve
+        </Button>
+        <Button size="sm" variant="danger" disabled={busy} onClick={() => respond(false)}>
+          Reject
+        </Button>
       </div>
     </div>
   );

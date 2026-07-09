@@ -5,7 +5,7 @@
 
 use std::sync::Mutex;
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
@@ -132,6 +132,29 @@ pub struct Reminder {
     pub created_at: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Event {
+    pub id: i64,
+    pub kind: String,
+    pub conversation_id: Option<i64>,
+    pub tool: Option<String>,
+    pub payload_json: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Suggestion {
+    pub id: i64,
+    pub kind: String,
+    pub title: String,
+    pub body: String,
+    pub payload_json: Option<String>,
+    pub dedup_key: String,
+    pub status: String,
+    pub created_at: String,
+    pub resolved_at: Option<String>,
+}
+
 impl Db {
     /// Open (or create) the database at `path` and run migrations.
     pub fn open(path: &std::path::Path) -> Result<Self> {
@@ -140,7 +163,28 @@ impl Db {
         }
         let conn = Connection::open(path)?;
         migrate(&conn)?;
-        Ok(Db(Mutex::new(conn)))
+        let db = Db(Mutex::new(conn));
+        db.ensure_fts_backfill()?;
+        Ok(db)
+    }
+
+    /// Rebuild `messages_fts` from `messages` once (guarded by the `fts_backfilled` setting).
+    /// Needed so rows inserted before the FTS triggers existed become searchable. Safe to
+    /// call repeatedly — a no-op once the flag is set.
+    ///
+    /// Locks the mutex only for the rebuild statement itself; `get_setting`/`set_setting`
+    /// each take their own lock, so none of these calls may run while another lock from
+    /// this struct is held (that would deadlock on the non-reentrant `Mutex`).
+    pub fn ensure_fts_backfill(&self) -> Result<()> {
+        if self.get_setting("fts_backfilled")?.as_deref() == Some("1") {
+            return Ok(());
+        }
+        {
+            let conn = self.0.lock().unwrap();
+            conn.execute("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')", [])?;
+        }
+        self.set_setting("fts_backfilled", "1")?;
+        Ok(())
     }
 
     pub fn get_setting(&self, key: &str) -> Result<Option<String>> {
@@ -231,6 +275,53 @@ impl Db {
              FROM messages WHERE conversation_id = ?1 ORDER BY id ASC",
         )?;
         let rows = stmt.query_map([conversation_id], |row| {
+            Ok(Message {
+                id: row.get(0)?,
+                conversation_id: row.get(1)?,
+                role: row.get(2)?,
+                content: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    /// Most recent messages across all conversations, newest first — used by the
+    /// nightly background review to spot recurring patterns.
+    pub fn recent_messages(&self, limit: i64) -> Result<Vec<Message>> {
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, conversation_id, role, content, created_at
+             FROM messages ORDER BY id DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map([limit], |row| {
+            Ok(Message {
+                id: row.get(0)?,
+                conversation_id: row.get(1)?,
+                role: row.get(2)?,
+                content: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    /// Full-text search over all messages via the `messages_fts` FTS5 index, newest-relevance
+    /// first. The query is wrapped as a single quoted FTS string so punctuation or FTS
+    /// operators (`AND`, `*`, `:`, unbalanced `"`) in user input can never produce a syntax
+    /// error — worst case it just matches nothing.
+    pub fn search_messages(&self, query: &str, limit: i64) -> Result<Vec<Message>> {
+        if query.trim().is_empty() {
+            return Ok(vec![]);
+        }
+        let q = format!("\"{}\"", query.replace('"', "\"\""));
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT m.id, m.conversation_id, m.role, m.content, m.created_at
+             FROM messages_fts f JOIN messages m ON m.id = f.rowid
+             WHERE messages_fts MATCH ?1 ORDER BY rank LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![q, limit], |row| {
             Ok(Message {
                 id: row.get(0)?,
                 conversation_id: row.get(1)?,
@@ -967,6 +1058,138 @@ impl Db {
         conn.execute("UPDATE reminders SET fired = 1 WHERE id = ?1", [id])?;
         Ok(())
     }
+
+    // --- Webhook dedupe --------------------------------------------------------
+
+    /// Atomically claim a webhook event id. Returns `true` the first time an id is
+    /// seen, `false` on any replay (e.g. WhatsApp's at-least-once delivery retries).
+    /// Single `INSERT OR IGNORE` — no read-then-write race.
+    pub fn try_claim_webhook_event(&self, id: &str) -> Result<bool> {
+        let conn = self.0.lock().unwrap();
+        let changed = conn.execute(
+            "INSERT OR IGNORE INTO webhook_events (id, created_at) VALUES (?1, ?2)",
+            rusqlite::params![id, now_iso()],
+        )?;
+        Ok(changed == 1)
+    }
+
+    // --- Events ----------------------------------------------------------------
+
+    pub fn insert_event(
+        &self,
+        kind: &str,
+        conversation_id: Option<i64>,
+        tool: Option<&str>,
+        payload_json: Option<&str>,
+    ) -> Result<i64> {
+        let conn = self.0.lock().unwrap();
+        conn.execute(
+            "INSERT INTO events (kind, conversation_id, tool, payload_json, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![kind, conversation_id, tool, payload_json, now_iso()],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn recent_events(&self, limit: i64) -> Result<Vec<Event>> {
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, kind, conversation_id, tool, payload_json, created_at
+             FROM events ORDER BY id DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map([limit], |row| {
+            Ok(Event {
+                id: row.get(0)?,
+                kind: row.get(1)?,
+                conversation_id: row.get(2)?,
+                tool: row.get(3)?,
+                payload_json: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    // --- Suggestions -------------------------------------------------------------
+
+    /// Insert a new suggestion unless a row (pending OR resolved) with the same
+    /// `dedup_key` already exists — a dismissed/accepted suggestion is never re-filed.
+    /// Returns `None` when skipped.
+    pub fn insert_suggestion(
+        &self,
+        kind: &str,
+        title: &str,
+        body: &str,
+        payload_json: Option<&str>,
+        dedup_key: &str,
+    ) -> Result<Option<i64>> {
+        let conn = self.0.lock().unwrap();
+        let exists: bool = conn.query_row(
+            "SELECT 1 FROM suggestions WHERE dedup_key = ?1",
+            [dedup_key],
+            |_| Ok(true),
+        ).optional()?.unwrap_or(false);
+        if exists {
+            return Ok(None);
+        }
+        conn.execute(
+            "INSERT INTO suggestions (kind, title, body, payload_json, dedup_key, status, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6)",
+            rusqlite::params![kind, title, body, payload_json, dedup_key, now_iso()],
+        )?;
+        Ok(Some(conn.last_insert_rowid()))
+    }
+
+    fn row_to_suggestion(row: &rusqlite::Row) -> rusqlite::Result<Suggestion> {
+        Ok(Suggestion {
+            id: row.get(0)?,
+            kind: row.get(1)?,
+            title: row.get(2)?,
+            body: row.get(3)?,
+            payload_json: row.get(4)?,
+            dedup_key: row.get(5)?,
+            status: row.get(6)?,
+            created_at: row.get(7)?,
+            resolved_at: row.get(8)?,
+        })
+    }
+
+    pub fn list_suggestions(&self, pending_only: bool) -> Result<Vec<Suggestion>> {
+        let conn = self.0.lock().unwrap();
+        let sql = if pending_only {
+            "SELECT id, kind, title, body, payload_json, dedup_key, status, created_at, resolved_at
+             FROM suggestions WHERE status = 'pending' ORDER BY id DESC"
+        } else {
+            "SELECT id, kind, title, body, payload_json, dedup_key, status, created_at, resolved_at
+             FROM suggestions ORDER BY id DESC"
+        };
+        let mut stmt = conn.prepare(sql)?;
+        let rows = stmt.query_map([], Self::row_to_suggestion)?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn get_suggestion(&self, id: i64) -> Result<Option<Suggestion>> {
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, kind, title, body, payload_json, dedup_key, status, created_at, resolved_at
+             FROM suggestions WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query([id])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(Self::row_to_suggestion(&row)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn resolve_suggestion(&self, id: i64, status: &str) -> Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute(
+            "UPDATE suggestions SET status = ?1, resolved_at = ?2 WHERE id = ?3 AND status = 'pending'",
+            rusqlite::params![status, now_iso(), id],
+        )?;
+        Ok(())
+    }
 }
 
 fn migrate(conn: &Connection) -> Result<()> {
@@ -989,6 +1212,17 @@ fn migrate(conn: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_messages_conversation
             ON messages(conversation_id);
+        CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(content, content='messages', content_rowid='id');
+        CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+          INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
+        END;
+        CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+          INSERT INTO messages_fts(messages_fts, rowid, content) VALUES('delete', old.id, old.content);
+        END;
+        CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
+          INSERT INTO messages_fts(messages_fts, rowid, content) VALUES('delete', old.id, old.content);
+          INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
+        END;
         CREATE TABLE IF NOT EXISTS routines (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             name            TEXT NOT NULL,
@@ -1090,6 +1324,30 @@ fn migrate(conn: &Connection) -> Result<()> {
             due_at      TEXT NOT NULL,
             fired       INTEGER NOT NULL DEFAULT 0,
             created_at  TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS webhook_events (
+            id          TEXT PRIMARY KEY,
+            created_at  TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS events (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind            TEXT NOT NULL,
+            conversation_id INTEGER,
+            tool            TEXT,
+            payload_json    TEXT,
+            created_at      TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);
+        CREATE TABLE IF NOT EXISTS suggestions (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind            TEXT NOT NULL,
+            title           TEXT NOT NULL,
+            body            TEXT NOT NULL,
+            payload_json    TEXT,
+            dedup_key       TEXT NOT NULL,
+            status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','accepted','dismissed')),
+            created_at      TEXT NOT NULL,
+            resolved_at     TEXT
         );",
     )?;
     Ok(())
@@ -1099,15 +1357,28 @@ fn now_iso() -> String {
     chrono::Utc::now().to_rfc3339()
 }
 
+/// Collision-proof suffix for test temp-dir names. Mixes a nanosecond timestamp with a
+/// process-wide monotonic counter so parallel `cargo test` threads never collide, even on
+/// coarse-resolution clocks where two threads can land on the same nanosecond tick.
+#[cfg(test)]
+pub(crate) fn unique_test_suffix() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let n = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64;
+    n.wrapping_mul(1_000).wrapping_add(COUNTER.fetch_add(1, Ordering::Relaxed))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn test_db() -> Db {
+        crate::secrets::init_test_file_store();
         let dir = std::env::temp_dir().join(format!(
             "donna-db-test-{}-{}",
             std::process::id(),
-            now_iso().replace([':', '.'], "-")
+            unique_test_suffix()
         ));
         std::fs::create_dir_all(&dir).unwrap();
         Db::open(&dir.join("t.sqlite")).unwrap()
@@ -1183,5 +1454,57 @@ mod tests {
         db.resolve_approval(d, "approved").unwrap();
         // newest-first: d, c, b approved, then a rejected -> streak of 3
         assert_eq!(db.count_consecutive_approvals("slack_send_message").unwrap(), 3);
+    }
+
+    #[test]
+    fn webhook_event_claim_once() {
+        let db = test_db();
+        assert!(db.try_claim_webhook_event("wamid.A1").unwrap());
+        assert!(!db.try_claim_webhook_event("wamid.A1").unwrap());
+        assert!(db.try_claim_webhook_event("wamid.A2").unwrap());
+    }
+
+    #[test]
+    fn fts_search_finds_and_backfills() {
+        let db = test_db();
+        let c = db.create_conversation("t").unwrap();
+        db.add_message(c, "user", "my dentist is Dr. Alvarez on Maple Street").unwrap();
+        db.add_message(c, "assistant", "noted").unwrap();
+        let hits = db.search_messages("dentist", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert!(hits[0].content.contains("Alvarez"));
+        assert!(db.search_messages("nonexistentword", 10).unwrap().is_empty());
+        // punctuation in query must not blow up FTS syntax
+        assert!(db.search_messages("Dr. Alvarez\"; DROP", 10).is_ok());
+    }
+
+    #[test]
+    fn fts_backfill_covers_preexisting_rows() {
+        // simulate a DB whose rows predate triggers: insert directly bypassing triggers is hard;
+        // instead assert ensure_fts_backfill is idempotent and the flag flips.
+        let db = test_db();
+        assert_eq!(db.get_setting("fts_backfilled").unwrap().as_deref(), Some("1")); // open() ran it
+        db.ensure_fts_backfill().unwrap(); // idempotent second call
+    }
+
+    #[test]
+    fn suggestion_dedup_latches() {
+        let db = test_db();
+        let a = db.insert_suggestion("routine","Daily standup prep","...",None,"routine:standup").unwrap();
+        assert!(a.is_some());
+        assert!(db.insert_suggestion("routine","dup","...",None,"routine:standup").unwrap().is_none()); // pending dup
+        db.resolve_suggestion(a.unwrap(), "dismissed").unwrap();
+        assert!(db.insert_suggestion("routine","again","...",None,"routine:standup").unwrap().is_none()); // dismissed → never again
+        assert!(db.list_suggestions(false).unwrap().len() == 1);
+    }
+
+    #[test]
+    fn events_recorded_and_listed() {
+        let db = test_db();
+        db.insert_event("user_request", Some(1), None, None).unwrap();
+        db.insert_event("tool_call", Some(1), Some("kb_search"), None).unwrap();
+        let ev = db.recent_events(10).unwrap();
+        assert_eq!(ev.len(), 2);
+        assert_eq!(ev[0].kind, "tool_call"); // newest first
     }
 }

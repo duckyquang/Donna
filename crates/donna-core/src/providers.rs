@@ -21,7 +21,7 @@ const OLLAMA_NUM_CTX: u32 = 4096;
 /// Cap generation length so short replies stay snappy.
 const OLLAMA_NUM_PREDICT: i32 = 1024;
 
-fn http_client() -> &'static reqwest::Client {
+pub(crate) fn http_client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT.get_or_init(reqwest::Client::new)
 }

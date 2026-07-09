@@ -77,10 +77,47 @@ The spec's own build order has six phases; this roadmap entry covers Phase 1
       `donna-server` compiles), `docker-compose.yml` with a `cloudflared` tunnel
       sidecar for optional public HTTPS
 
-Not yet built (Phases 2–6 of the spec):
-- [ ] Agent loop, tool registry, trust engine (earned autonomy for outbound actions)
-- [ ] Two-way WhatsApp (webhook, allowlist, voice notes)
-- [ ] `USER.md` / `MEMORY.md`, FTS5 message search, events log, background review,
-      suggestion queue, agentic `[SILENT]` routines
-- [ ] Voice: desktop push-to-talk mode, then WhatsApp voice notes
-- [ ] Skills system (`skills_list` / `skill_view` / `skill_create` via suggestions)
+Phase 2 (Hands) of the spec — done:
+- [x] Agent loop, tool registry, trust engine (earned autonomy for outbound actions)
+- [x] Approvals end-to-end (WS events, RPC arms, Chat UI cards, Settings policy editor)
+
+Phase 3 (Reach) of the spec — done:
+- [x] Two-way WhatsApp: Meta Cloud API webhook (verify + signed receive), owner
+      allowlist (`whatsapp_my_number`, set from Integrations), inbound dedup,
+      agent-loop replies, approvals as interactive buttons. Voice notes deferred
+      to Phase 5. See `donna-server/README.md` for the Meta setup guide.
+
+Phase 4 (Growth) of the spec — done:
+- [x] Capped `USER.md` / `MEMORY.md` curated via a `memory_update` tool (errors
+      `MEMORY_FULL` past the cap, forcing consolidation), injected into every system prompt
+- [x] FTS5 full-text `session_search` over the whole chat history, with one-time backfill
+      for messages that predate the index
+- [x] Events log (`chat request` / `tool call` / `approval`) recorded at the in-tree
+      choke points
+- [x] Nightly background review (cheap/configurable model) that curates memory and
+      files suggestions from recurring patterns
+- [x] Consent-first suggestion queue — Dashboard card with Accept/Dismiss, dismissals
+      latched by dedup key, Accept on a `routine` suggestion creates the routine
+- [x] `[SILENT]` sentinel for routines — a scheduled check that finds nothing produces
+      no doc/notification and doesn't re-fire every tick
+
+Phase 5 (Voice) of the spec — done:
+- [x] `/voice/transcribe` (Whisper) and `/voice/speak` (TTS) endpoints, bearer-auth,
+      400 without an OpenAI key
+- [x] WhatsApp voice notes: inbound audio transcribed, run through the agent loop,
+      replied with a synthesized voice note (text fallback on any failure)
+- [x] Desktop push-to-talk: mic button in Chat records → transcribes → sends via the
+      normal streamed-reply path; "Speak replies aloud" toggle + voice picker in
+      Settings; macOS mic entitlement (`NSMicrophoneUsageDescription`)
+
+Phase 6 (Craft) of the spec — done:
+- [x] File-based skills catalog (`skills.rs`): `SKILL.md` + frontmatter, traversal-guarded
+      save/list/view, seeded example skill so the catalog is never empty
+- [x] `skills_list` / `skill_view` / `skill_create` registered as agent tools; every
+      system prompt carries a `## Available skills` name+description listing
+- [x] Accepting a `kind:"skill"` suggestion saves the skill; the nightly review can
+      propose a skill for a recurring recipe
+- [x] Skills page (`/skills`) — browse the catalog, view a skill's SKILL.md as
+      rendered Markdown
+
+All six spec phases (Foundation, Hands, Reach, Growth, Voice, Craft) are now shipped.

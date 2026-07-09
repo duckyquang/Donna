@@ -1,6 +1,6 @@
 {
   "name": "donna",
-  "version": "0.0.0",
+  "version": "0.2.0",
   "description": "Open-source, local-first AI personal assistant that learns about you and proactively gets work done.",
   "license": "MIT",
   "private": true,
@@ -15,11 +15,14 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "sidecar": "bash scripts/build-sidecar.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.10.1",
     "@xyflow/react": "^12.11.0",
     "lucide-react": "^0.460.0",
     "react": "^18.3.1",

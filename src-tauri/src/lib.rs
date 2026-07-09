@@ -4,6 +4,8 @@
 
 mod commands;
 mod quick_chat;
+mod embedded_server;
+mod ollama;
 
 pub use donna_core::{error, knowledge, secrets};
 
@@ -12,6 +14,9 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             use tauri::Manager;
 
@@ -22,6 +27,14 @@ pub fn run() {
             // opens the local SQLite DB or warms a model; the server owns all data + logic.
             // Only quick-chat window state and the Cmd+D shortcut live here.
             app.manage(crate::quick_chat::QuickChatState::default());
+
+            // Embedded brain: spawn the bundled donna-server so end users need zero setup.
+            app.manage(crate::embedded_server::EmbeddedState::default());
+            crate::embedded_server::start(app.handle().clone());
+
+            // Managed Ollama runtime: lets onboarding install/run/pull local models
+            // without a terminal (see src-tauri/src/ollama.rs).
+            app.manage(crate::ollama::OllamaState::default());
 
             // Register Cmd+D global shortcut for the quick-chat overlay
             {
@@ -40,6 +53,32 @@ pub fn run() {
                         });
                     }
                 })?;
+            }
+
+            // Tray: closing the window already hides it (see on_window_event); the tray
+            // is how users reopen Donna or actually quit. The server keeps running
+            // while hidden, so routines still fire.
+            {
+                use tauri::menu::{Menu, MenuItem};
+                use tauri::tray::TrayIconBuilder;
+                let open = MenuItem::with_id(app, "open", "Open Donna", true, None::<&str>)?;
+                let quit = MenuItem::with_id(app, "quit", "Quit Donna", true, None::<&str>)?;
+                let menu = Menu::with_items(app, &[&open, &quit])?;
+                TrayIconBuilder::with_id("donna-tray")
+                    .icon(app.default_window_icon().unwrap().clone())
+                    .menu(&menu)
+                    .show_menu_on_left_click(true)
+                    .on_menu_event(|app, e| match e.id.as_ref() {
+                        "open" => {
+                            if let Some(w) = app.get_webview_window("main") {
+                                let _ = w.show();
+                                let _ = w.set_focus();
+                            }
+                        }
+                        "quit" => app.exit(0),
+                        _ => {}
+                    })
+                    .build(app)?;
             }
 
             // ponytail: one brain, one scheduler — donna-server runs routines (Task 9);
@@ -65,7 +104,19 @@ pub fn run() {
             commands::project_read_file,
             commands::project_write_file,
             commands::project_status_report,
+            commands::open_url,
+            embedded_server::embedded_server_status,
+            ollama::ollama_status,
+            ollama::ollama_install,
+            ollama::ollama_start,
+            ollama::ollama_pull,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Donna");
+        .build(tauri::generate_context!())
+        .expect("error while building Donna")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                crate::embedded_server::kill(app);
+                crate::ollama::kill(app);
+            }
+        });
 }

@@ -6,7 +6,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::db::{Approval, Conversation, Db, Doc, Message, Notification, Routine, TrustPolicy};
+use crate::audio;
+use crate::db::{Approval, Conversation, Db, Doc, Event, Message, Notification, Routine, Suggestion, TrustPolicy};
 use crate::embeddings;
 use crate::error::{Error, Result};
 use crate::integrations::{self, discord, github, google, linear, notion, slack, telegram, whatsapp};
@@ -14,6 +15,7 @@ use crate::knowledge;
 use crate::providers::{self, ChatTurn};
 use crate::retrieval;
 use crate::secrets;
+use crate::skills;
 use crate::tools::{self, Risk};
 
 const DONNA_SYSTEM_PROMPT: &str = "You are Donna, a warm, sharp, and proactive personal \
@@ -60,10 +62,26 @@ fn build_system_prompt(
     let basics = knowledge::basics_checklist_for_prompt()?;
     let known = knowledge::summary_for_prompt()?;
     let setup = build_setup_context(config)?;
+    let memory = knowledge::memory_prompt_section()?;
+    let skills = skills::skills_prompt_section()?;
 
     let mut prompt = format!(
-        "{DONNA_SYSTEM_PROMPT}\n\n## Basics checklist\n{basics}\n\n## What Donna knows about this user\n{known}\n\n{setup}"
+        "{DONNA_SYSTEM_PROMPT}\n\n## Basics checklist\n{basics}\n\n"
     );
+    if !memory.is_empty() {
+        prompt.push_str(&memory);
+        prompt.push_str("\n\n");
+    }
+    if !skills.is_empty() {
+        prompt.push_str(&skills);
+        prompt.push_str("\n\n");
+    }
+    prompt.push_str(&format!(
+        "## What Donna knows about this user\n\
+         (The sections above are your curated memory; the list below is the raw knowledge \
+         graph it is distilled from. When they overlap, trust the curated memory.)\n\
+         {known}\n\n{setup}"
+    ));
 
     if let Some(ctx) = retrieval_ctx {
         if !ctx.is_empty() {
@@ -129,6 +147,16 @@ pub struct AppConfig {
     /// Ollama embedding model for semantic memory retrieval.
     #[serde(default = "default_embed_model")]
     pub embed_model: String,
+    /// Model the nightly background review uses; empty means "use `model`" (see `review_model()`).
+    #[serde(default)]
+    pub review_model: String,
+    /// TTS voice for spoken replies (see `tts_voice_setting()`); empty/invalid falls back to
+    /// `audio::DEFAULT_TTS_VOICE`.
+    #[serde(default)]
+    pub tts_voice: String,
+    /// Whether the desktop chat should speak assistant replies aloud after they stream in.
+    #[serde(default)]
+    pub speak_replies: bool,
 }
 
 fn default_embed_model() -> String {
@@ -154,11 +182,25 @@ pub fn load_config(db: &Db) -> Result<AppConfig> {
         embed_model: db
             .get_setting("embed_model")?
             .unwrap_or_else(|| embeddings::DEFAULT_EMBED_MODEL.into()),
+        review_model: db.get_setting("review_model")?.unwrap_or_default(),
+        tts_voice: db.get_setting("tts_voice")?.unwrap_or_default(),
+        speak_replies: db.get_setting("speak_replies")?.as_deref() == Some("true"),
     })
 }
 
 pub fn get_config(db: &Db) -> Result<AppConfig> {
     load_config(db)
+}
+
+/// Model the nightly background review should use: the `review_model` setting if set to a
+/// non-empty value, else the main chat model. Empty when neither is configured.
+pub fn review_model(db: &Db) -> String {
+    if let Ok(Some(m)) = db.get_setting("review_model") {
+        if !m.trim().is_empty() {
+            return m;
+        }
+    }
+    db.get_setting("model").ok().flatten().unwrap_or_default()
 }
 
 pub fn basics_status() -> Result<Vec<knowledge::BasicFieldStatus>> {
@@ -190,6 +232,12 @@ pub fn save_config(db: &Db, config: AppConfig) -> Result<()> {
     )?;
     db.set_setting("autonomy_level", &config.autonomy_level)?;
     db.set_setting("embed_model", &config.embed_model)?;
+    db.set_setting("review_model", &config.review_model)?;
+    db.set_setting("tts_voice", &config.tts_voice)?;
+    db.set_setting(
+        "speak_replies",
+        if config.speak_replies { "true" } else { "false" },
+    )?;
     if config.provider == "ollama" {
         spawn_ollama_warmup(config.ollama_host, config.model);
     }
@@ -376,6 +424,8 @@ pub async fn send_chat(
     conversation_id: i64,
     on_event: &(dyn Fn(ChatEvent) + Send + Sync),
 ) -> Result<()> {
+    let _ = db.insert_event("user_request", Some(conversation_id), None, None);
+
     let config = load_config(db)?;
     if config.model.is_empty() {
         on_event(ChatEvent::Error {
@@ -572,6 +622,28 @@ pub async fn kg_save_node(
         .await;
     }
     Ok(to_graph_node(node))
+}
+
+/// Update USER.md or MEMORY.md. `db` is unused today but kept for signature parity with
+/// the other ops. Bad `file`/`action` values are rejected before touching disk.
+pub async fn memory_update(
+    _db: &Db,
+    file: String,
+    action: String,
+    text: String,
+) -> Result<String> {
+    let which = match file.as_str() {
+        "user" => knowledge::MemoryFile::User,
+        "memory" => knowledge::MemoryFile::Memory,
+        other => return Err(Error::Provider(format!("unknown memory file: {other}"))),
+    };
+    let action = match action.as_str() {
+        "add" => knowledge::MemoryAction::Add,
+        "replace" => knowledge::MemoryAction::Replace,
+        "remove" => knowledge::MemoryAction::Remove,
+        other => return Err(Error::Provider(format!("unknown memory action: {other}"))),
+    };
+    knowledge::apply_memory_update(which, action, &text)
 }
 
 pub fn kg_delete_node(folder: Vec<String>, id: String) -> Result<()> {
@@ -936,6 +1008,13 @@ pub async fn approval_respond(db: &Db, id: i64, approve: bool) -> Result<String>
         .get_approval(id)?
         .ok_or_else(|| Error::Provider(format!("approval {id} not found")))?;
 
+    let _ = db.insert_event(
+        "approval",
+        Some(a.conversation_id),
+        Some(&a.tool),
+        Some(&serde_json::json!({"approved": approve}).to_string()),
+    );
+
     if a.status != "pending" {
         return Ok("already resolved".into());
     }
@@ -1012,6 +1091,16 @@ pub fn get_doc(db: &Db, id: i64) -> Result<Doc> {
 
 pub fn delete_doc(db: &Db, id: i64) -> Result<()> {
     db.delete_doc(id)
+}
+
+// --- Skills -------------------------------------------------------------------
+
+pub fn skills_list() -> Result<Vec<skills::SkillMeta>> {
+    skills::list_skills()
+}
+
+pub fn skill_view(name: String, path: Option<String>) -> Result<String> {
+    skills::view_skill(&name, path.as_deref())
 }
 
 // --- Gmail ------------------------------------------------------------------
@@ -1104,6 +1193,275 @@ pub fn whatsapp_disconnect() -> Result<()> {
 
 pub async fn whatsapp_send_message(to: String, text: String) -> Result<()> {
     whatsapp::send_message(&to, &text).await
+}
+
+const WHATSAPP_CONVERSATION_SETTING: &str = "whatsapp_conversation_id";
+
+/// Whether `last_message_at` (RFC3339) is within 6h of `now` (RFC3339). Unparseable
+/// timestamps are treated as stale so callers fall back to starting a fresh session.
+fn session_is_fresh(last_message_at: &str, now: &str) -> bool {
+    let (Ok(last), Ok(now)) = (
+        chrono::DateTime::parse_from_rfc3339(last_message_at),
+        chrono::DateTime::parse_from_rfc3339(now),
+    ) else {
+        return false;
+    };
+    now.signed_duration_since(last) < chrono::Duration::hours(6)
+}
+
+/// Rolling WhatsApp "session" conversation: reuse the stored conversation while its
+/// last message is < 6h old, otherwise start a new one (WhatsApp's 24h customer
+/// service window makes long-lived free-form threads unsafe to assume open forever;
+/// we roll sessions well within that on any lull). No messages yet in the stored
+/// conversation counts as fresh (nothing to be stale).
+pub fn whatsapp_session_conversation(db: &Db) -> Result<i64> {
+    if let Some(id) = db.get_setting(WHATSAPP_CONVERSATION_SETTING)? {
+        if let Ok(id) = id.parse::<i64>() {
+            let messages = db.get_messages(id)?;
+            let fresh = match messages.last() {
+                Some(last) => session_is_fresh(&last.created_at, &chrono::Utc::now().to_rfc3339()),
+                None => true,
+            };
+            // ponytail: full scan to detect a vanished conversation — fine for a single-user table.
+            if fresh && db.list_conversations()?.iter().any(|c| c.id == id) {
+                return Ok(id);
+            }
+        }
+    }
+    let id = db.create_conversation("WhatsApp")?;
+    db.set_setting(WHATSAPP_CONVERSATION_SETTING, &id.to_string())?;
+    Ok(id)
+}
+
+const WHATSAPP_MY_NUMBER_SETTING: &str = "whatsapp_my_number";
+
+/// Owner's WhatsApp number (E.164) — the webhook allowlist. Set from the Integrations
+/// UI; read back to prefill that same field.
+pub fn whatsapp_set_my_number(db: &Db, number: String) -> Result<()> {
+    let number = number.trim();
+    if number.is_empty() {
+        return Err(Error::Provider("WhatsApp number cannot be empty".into()));
+    }
+    db.set_setting(WHATSAPP_MY_NUMBER_SETTING, number)
+}
+
+pub fn whatsapp_get_my_number(db: &Db) -> Result<Option<String>> {
+    db.get_setting(WHATSAPP_MY_NUMBER_SETTING)
+}
+
+/// Handle an inbound WhatsApp text message: append it to the rolling session
+/// conversation, run it through the agent loop, and reply with the result. Never
+/// streams — the caller is a webhook, so only the final message (or an error) goes
+/// back over WhatsApp. Every failure past "append the user message" is swallowed:
+/// a webhook handler must not surface an `Err` to Meta.
+pub async fn whatsapp_handle_text(db: &Db, text: &str) -> Result<()> {
+    let conv = whatsapp_session_conversation(db)?;
+    db.add_message(conv, "user", text)?;
+
+    let last_id_before = db.get_messages(conv)?.last().map(|m| m.id).unwrap_or(0);
+
+    let last_error: std::sync::Arc<std::sync::Mutex<Option<String>>> = Default::default();
+    let on_event = {
+        let last_error = last_error.clone();
+        move |ev: ChatEvent| {
+            if let ChatEvent::Error { message } = ev {
+                *last_error.lock().unwrap() = Some(message);
+            }
+        }
+    };
+    let _ = send_chat(db, conv, &on_event).await;
+
+    let Some(my_number) = db.get_setting(WHATSAPP_MY_NUMBER_SETTING)? else {
+        eprintln!("whatsapp_handle_text: no whatsapp_my_number set, nowhere to reply");
+        return Ok(());
+    };
+
+    let reply = match db.get_messages(conv)?.into_iter().last() {
+        Some(m) if m.id != last_id_before && m.role == "assistant" => m.content,
+        _ => last_error
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| "I hit a problem handling that.".to_string()),
+    };
+
+    if let Err(e) = whatsapp::send_message(&my_number, &reply).await {
+        eprintln!("whatsapp_handle_text: send_message failed: {e}");
+    }
+    Ok(())
+}
+
+const TTS_VOICE_SETTING: &str = "tts_voice";
+
+/// Configured TTS voice (setting `tts_voice`), falling back to
+/// `audio::DEFAULT_TTS_VOICE` when unset or invalid. Also read by Task 5.
+pub fn tts_voice_setting(db: &Db) -> String {
+    match db.get_setting(TTS_VOICE_SETTING) {
+        Ok(Some(v)) if audio::is_valid_voice(&v) => v,
+        _ => audio::DEFAULT_TTS_VOICE.to_string(),
+    }
+}
+
+/// Whether a reply is worth synthesizing as a voice note: not empty, and not so
+/// long that a multi-minute TTS clip would be bad UX. Text (silent, skimmable,
+/// instant) is the better fallback for both extremes.
+pub fn reply_is_voice_suitable(reply: &str) -> bool {
+    let trimmed = reply.trim();
+    !trimmed.is_empty() && trimmed.chars().count() <= 2000
+}
+
+/// Reply over WhatsApp, preferring a synthesized voice note and falling back to
+/// text on any failure (unsuitable reply, synth error, or send error). Best-effort:
+/// swallows all errors, since the caller is a webhook handler.
+async fn reply_over_whatsapp(db: &Db, my_number: &str, openai_key: &str, reply: &str) {
+    if reply_is_voice_suitable(reply) {
+        let voice_result = async {
+            let ogg = audio::synthesize(
+                openai_key,
+                audio::DEFAULT_TTS_MODEL,
+                &tts_voice_setting(db),
+                reply,
+                "opus",
+            )
+            .await?;
+            whatsapp::send_voice_note(my_number, ogg).await
+        }
+        .await;
+        if let Err(e) = voice_result {
+            eprintln!("whatsapp_handle_audio: voice reply failed, falling back to text: {e}");
+        } else {
+            return;
+        }
+    }
+
+    if let Err(e) = whatsapp::send_message(my_number, reply).await {
+        eprintln!("whatsapp_handle_audio: send_message failed: {e}");
+    }
+}
+
+/// Handle an inbound WhatsApp voice note: transcribe it, run the transcript through
+/// the agent loop over the same rolling session as `whatsapp_handle_text`, and reply
+/// with a synthesized voice note (falling back to text on any failure). The OpenAI
+/// key is checked FIRST — before touching the network at all — so the no-creds path
+/// is deterministic; every other failure (fetch, transcription, brain turn) is also
+/// swallowed so a webhook handler never surfaces an `Err`.
+pub async fn whatsapp_handle_audio(db: &Db, media_id: &str) -> Result<()> {
+    let Some(key) = secrets::get_api_key("openai")? else {
+        best_effort_reply(db, "I can't transcribe voice notes without an OpenAI key set.").await;
+        return Ok(());
+    };
+
+    let bytes = match whatsapp::download_media(media_id).await {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("whatsapp_handle_audio: download_media failed: {e}");
+            best_effort_reply(db, "I couldn't fetch that voice note.").await;
+            return Ok(());
+        }
+    };
+
+    let text = match audio::transcribe(&key, audio::DEFAULT_TRANSCRIBE_MODEL, bytes, "note.ogg").await {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("whatsapp_handle_audio: transcribe failed: {e}");
+            best_effort_reply(db, "I couldn't understand that voice note.").await;
+            return Ok(());
+        }
+    };
+
+    if text.trim().is_empty() {
+        best_effort_reply(db, "I couldn't hear anything in that voice note.").await;
+        return Ok(());
+    }
+
+    let conv = whatsapp_session_conversation(db)?;
+    db.add_message(conv, "user", &text)?;
+
+    let last_id_before = db.get_messages(conv)?.last().map(|m| m.id).unwrap_or(0);
+
+    let last_error: std::sync::Arc<std::sync::Mutex<Option<String>>> = Default::default();
+    let on_event = {
+        let last_error = last_error.clone();
+        move |ev: ChatEvent| {
+            if let ChatEvent::Error { message } = ev {
+                *last_error.lock().unwrap() = Some(message);
+            }
+        }
+    };
+    let _ = send_chat(db, conv, &on_event).await;
+
+    let Some(my_number) = db.get_setting(WHATSAPP_MY_NUMBER_SETTING)? else {
+        eprintln!("whatsapp_handle_audio: no whatsapp_my_number set, nowhere to reply");
+        return Ok(());
+    };
+
+    let reply = match db.get_messages(conv)?.into_iter().last() {
+        Some(m) if m.id != last_id_before && m.role == "assistant" => m.content,
+        _ => last_error
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| "I hit a problem handling that.".to_string()),
+    };
+
+    reply_over_whatsapp(db, &my_number, &key, &reply).await;
+    Ok(())
+}
+
+/// Best-effort reply to the owner's configured WhatsApp number. Used for the
+/// early-bailout paths in `whatsapp_handle_audio`, where there's no session/brain
+/// turn to piggyback the reply on. Swallows both a missing number and a send failure.
+async fn best_effort_reply(db: &Db, text: &str) {
+    if let Ok(Some(number)) = db.get_setting(WHATSAPP_MY_NUMBER_SETTING) {
+        if let Err(e) = whatsapp::send_message(&number, text).await {
+            eprintln!("whatsapp_handle_audio: send_message failed: {e}");
+        }
+    }
+}
+
+/// Parse a WhatsApp interactive button reply id into `(approve, approval_id)`.
+/// `"approve:42"` -> `Some((true, 42))`, `"reject:7"` -> `Some((false, 7))`, anything
+/// else (unknown prefix, missing colon, non-numeric id) -> `None`. Pure.
+pub fn parse_button_id(id: &str) -> Option<(bool, i64)> {
+    let (prefix, num) = id.split_once(':')?;
+    let approve = match prefix {
+        "approve" => true,
+        "reject" => false,
+        _ => return None,
+    };
+    num.parse::<i64>().ok().map(|n| (approve, n))
+}
+
+/// Handle an inbound WhatsApp approve/reject button tap: resolve the approval and
+/// echo the outcome back over WhatsApp (best-effort — `approval_respond` already
+/// persists the in-conversation message and notification). Every send failure is
+/// swallowed so the webhook handler never errors.
+pub async fn whatsapp_handle_button(db: &Db, button_id: &str) -> Result<()> {
+    let Some(my_number) = db.get_setting(WHATSAPP_MY_NUMBER_SETTING)? else {
+        return Ok(());
+    };
+
+    let Some((approve, id)) = parse_button_id(button_id) else {
+        let _ = whatsapp::send_message(&my_number, "I didn't recognize that button.").await;
+        return Ok(());
+    };
+
+    let summary = db.get_approval(id)?.map(|a| a.summary).unwrap_or_default();
+    let outcome = approval_respond(db, id, approve).await?;
+    let reply = if outcome == "approved" {
+        format!("Done: {summary}")
+    } else if let Some(err) = outcome.strip_prefix("failed: ") {
+        format!("That failed: {err}")
+    } else if outcome == "rejected" {
+        format!("Cancelled: {summary}")
+    } else {
+        "Already handled.".to_string()
+    };
+
+    if let Err(e) = whatsapp::send_message(&my_number, &reply).await {
+        eprintln!("whatsapp_handle_button: send_message failed: {e}");
+    }
+    Ok(())
 }
 
 // --- Projects ----------------------------------------------------------------
@@ -1490,6 +1848,115 @@ fn strip_html_text(html: &str) -> String {
         .join(" ")
 }
 
+// --- Events & suggestions -----------------------------------------------------
+
+pub fn recent_events(db: &Db, limit: i64) -> Result<Vec<Event>> {
+    db.recent_events(limit)
+}
+
+pub fn suggestions_list(db: &Db, pending_only: bool) -> Result<Vec<Suggestion>> {
+    db.list_suggestions(pending_only)
+}
+
+#[derive(Deserialize)]
+pub struct SkillSpec {
+    pub name: String,
+    pub description: String,
+    #[serde(default)]
+    pub category: String,
+    pub body: String,
+}
+
+/// Resolve a suggestion. Dismiss just marks it dismissed; accept marks it accepted and,
+/// for kind `"routine"`, acts on it by creating the routine from its `payload_json`
+/// (a `CreateRoutineInput`); for kind `"skill"`, acts on it by saving the skill from its
+/// `payload_json` (a `SkillSpec`). Other kinds are marked accepted only — acting on them
+/// is manual/another phase's job. Idempotent: a non-pending suggestion returns "already
+/// resolved" without re-acting. For routine/skill suggestions, the payload is parsed
+/// BEFORE `resolve_suggestion` runs, so a missing/malformed payload leaves the suggestion
+/// pending (retryable) with a visible failure notification instead of silently
+/// consuming it.
+pub async fn suggestion_respond(db: &Db, id: i64, accept: bool) -> Result<String> {
+    let s = db
+        .get_suggestion(id)?
+        .ok_or_else(|| Error::Provider(format!("suggestion {id} not found")))?;
+
+    if s.status != "pending" {
+        return Ok("already resolved".into());
+    }
+
+    if !accept {
+        db.resolve_suggestion(id, "dismissed")?;
+        db.insert_notification("Suggestion dismissed", &s.title, None, None)?;
+        return Ok("dismissed".into());
+    }
+
+    let parsed_routine = if s.kind == "routine" {
+        match s.payload_json.as_deref().map(serde_json::from_str::<CreateRoutineInput>) {
+            Some(Ok(input)) => Some(input),
+            Some(Err(e)) => {
+                db.insert_notification(
+                    "Suggestion couldn't be applied",
+                    &format!("{}: invalid routine details", s.title),
+                    None,
+                    None,
+                )?;
+                return Ok(format!("failed: {e}"));
+            }
+            None => {
+                db.insert_notification(
+                    "Suggestion couldn't be applied",
+                    &format!("{}: invalid routine details", s.title),
+                    None,
+                    None,
+                )?;
+                return Ok("failed: missing routine payload".into());
+            }
+        }
+    } else {
+        None
+    };
+
+    let parsed_skill = if s.kind == "skill" {
+        match s.payload_json.as_deref().map(serde_json::from_str::<SkillSpec>) {
+            Some(Ok(spec)) => Some(spec),
+            Some(Err(e)) => {
+                db.insert_notification(
+                    "Suggestion couldn't be applied",
+                    &format!("{}: invalid skill details", s.title),
+                    None,
+                    None,
+                )?;
+                return Ok(format!("failed: {e}"));
+            }
+            None => {
+                db.insert_notification(
+                    "Suggestion couldn't be applied",
+                    &format!("{}: invalid skill details", s.title),
+                    None,
+                    None,
+                )?;
+                return Ok("failed: missing skill payload".into());
+            }
+        }
+    } else {
+        None
+    };
+
+    db.resolve_suggestion(id, "accepted")?;
+    if let Some(input) = parsed_routine {
+        create_routine(db, input)?;
+    }
+    if let Some(spec) = parsed_skill {
+        let category = if spec.category.is_empty() { "general" } else { &spec.category };
+        skills::save_skill(&spec.name, &spec.description, category, &spec.body)?;
+        db.insert_notification("Skill saved", &spec.name, None, None)?;
+        return Ok("accepted".into());
+    }
+    db.insert_notification("Suggestion accepted", &s.title, None, None)?;
+    Ok("accepted".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1497,7 +1964,11 @@ mod tests {
 
     #[test]
     fn conversation_crud_roundtrip() {
-        let dir = std::env::temp_dir().join(format!("donna-ops-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "donna-ops-{}-{}",
+            std::process::id(),
+            crate::db::unique_test_suffix()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         let db = Db::open(&dir.join("t.sqlite")).unwrap();
 
@@ -1509,24 +1980,32 @@ mod tests {
     }
 
     fn test_db() -> Db {
+        crate::secrets::init_test_file_store();
         let dir = std::env::temp_dir().join(format!(
             "donna-ops-approvals-{}-{}",
             std::process::id(),
-            rand_suffix()
+            crate::db::unique_test_suffix()
         ));
         std::fs::create_dir_all(&dir).unwrap();
         Db::open(&dir.join("t.sqlite")).unwrap()
     }
 
-    fn rand_suffix() -> u64 {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64
+    #[test]
+    fn system_prompt_lists_available_skills() {
+        let db = test_db();
+        let _g = crate::skills::tests::skills_test_guard();
+        crate::skills::save_skill("Trip Planner", "Plan a trip", "travel", "steps").unwrap();
+        let cfg = load_config(&db).unwrap();
+        let p = build_system_prompt(&cfg, None).unwrap();
+        assert!(p.contains("## Available skills"));
+        assert!(p.contains("Trip Planner"));
+        assert!(!p.contains("steps")); // body not dumped into the prompt
     }
 
     #[tokio::test]
     async fn approval_respond_reject_path() {
         let db = test_db();
-        let a = crate::trust::request_approval(
+        let (a, _) = crate::trust::request_approval(
             &db,
             1,
             "slack_send_message",
@@ -1541,7 +2020,7 @@ mod tests {
     #[tokio::test]
     async fn approval_respond_is_idempotent() {
         let db = test_db();
-        let a = crate::trust::request_approval(
+        let (a, _) = crate::trust::request_approval(
             &db,
             1,
             "slack_send_message",
@@ -1561,7 +2040,7 @@ mod tests {
         // without hitting the network.
         let db = test_db();
         let conv_id = create_conversation(&db, "New conversation".into()).unwrap();
-        let a = crate::trust::request_approval(
+        let (a, _) = crate::trust::request_approval(
             &db,
             conv_id,
             "slack_send_message",
@@ -1596,5 +2075,194 @@ mod tests {
         assert!(trust_policy_set(&db, "list_docs".into(), "auto".into()).is_err());
         assert!(trust_policy_set(&db, "nonexistent".into(), "auto".into()).is_err());
         assert!(trust_policy_set(&db, "slack_send_message".into(), "bogus".into()).is_err());
+    }
+
+    #[test]
+    fn whatsapp_session_reuses_fresh_creates_stale() {
+        let db = test_db();
+        let c1 = whatsapp_session_conversation(&db).unwrap();
+        db.add_message(c1, "user", "hi").unwrap();
+        assert_eq!(whatsapp_session_conversation(&db).unwrap(), c1); // fresh -> reuse
+        // age the last message 7h via raw SQL (created_at is TEXT RFC3339)
+        let old = (chrono::Utc::now() - chrono::Duration::hours(7)).to_rfc3339();
+        db.0.lock().unwrap().execute("UPDATE messages SET created_at = ?1", rusqlite::params![old]).unwrap();
+        let c2 = whatsapp_session_conversation(&db).unwrap();
+        assert_ne!(c2, c1); // stale -> new conversation
+        assert_eq!(whatsapp_session_conversation(&db).unwrap(), c2); // sticky
+    }
+
+    #[test]
+    fn session_freshness_boundary() {
+        let now = "2026-01-01T12:00:00+00:00";
+        assert!(session_is_fresh("2026-01-01T07:00:00+00:00", now)); // 5h
+        assert!(!session_is_fresh("2026-01-01T05:00:00+00:00", now)); // 7h
+    }
+
+    #[test]
+    fn parse_button_id_cases() {
+        assert_eq!(parse_button_id("approve:42"), Some((true, 42)));
+        assert_eq!(parse_button_id("reject:7"), Some((false, 7)));
+        assert_eq!(parse_button_id("approve:-3"), Some((true, -3)));
+        assert_eq!(parse_button_id("garbage"), None);
+        assert_eq!(parse_button_id(""), None);
+        assert_eq!(parse_button_id("approve:abc"), None);
+        assert_eq!(parse_button_id("whatever:5"), None);
+    }
+
+    #[tokio::test]
+    async fn whatsapp_handle_button_reject_path_resolves_despite_send_failure() {
+        let db = test_db();
+        db.set_setting("whatsapp_my_number", "+15550100").unwrap();
+        let (a, _) = crate::trust::request_approval(
+            &db,
+            1,
+            "slack_send_message",
+            &serde_json::json!({"channel":"#g","text":"x"}),
+        )
+        .unwrap();
+
+        // No WhatsApp credentials configured, so the echo send will fail; the handler
+        // must swallow that and still resolve the approval, returning Ok.
+        let result = whatsapp_handle_button(&db, &format!("reject:{}", a.id)).await;
+        assert!(result.is_ok());
+        assert_eq!(db.get_approval(a.id).unwrap().unwrap().status, "rejected");
+    }
+
+    #[tokio::test]
+    async fn whatsapp_handle_button_unrecognized_id_is_ok() {
+        let db = test_db();
+        db.set_setting("whatsapp_my_number", "+15550100").unwrap();
+        let result = whatsapp_handle_button(&db, "garbage").await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn whatsapp_handle_button_no_my_number_is_ok() {
+        let db = test_db();
+        let (a, _) = crate::trust::request_approval(
+            &db,
+            1,
+            "slack_send_message",
+            &serde_json::json!({"channel":"#g","text":"x"}),
+        )
+        .unwrap();
+        // my_number unset entirely: nothing to send to, but should not error and
+        // should not resolve the approval (bailed before parsing).
+        let result = whatsapp_handle_button(&db, &format!("approve:{}", a.id)).await;
+        assert!(result.is_ok());
+        assert_eq!(db.get_approval(a.id).unwrap().unwrap().status, "pending");
+    }
+
+    #[tokio::test]
+    async fn whatsapp_handle_audio_no_creds_is_ok() {
+        // No OpenAI key configured: the key check runs before any network call
+        // (download included), so this must return Ok without touching the network.
+        let db = test_db();
+        assert!(whatsapp_handle_audio(&db, "nonexistent-media").await.is_ok());
+    }
+
+    #[test]
+    fn voice_reply_suitability() {
+        assert!(reply_is_voice_suitable("Sure, your meeting is at 3pm."));
+        assert!(!reply_is_voice_suitable(""));
+        assert!(!reply_is_voice_suitable(&"x".repeat(2500)));
+    }
+
+    #[test]
+    fn tts_voice_setting_defaults_and_validates() {
+        let db = test_db();
+        assert_eq!(tts_voice_setting(&db), "nova");
+        db.set_setting("tts_voice", "shimmer").unwrap();
+        assert_eq!(tts_voice_setting(&db), "shimmer");
+        db.set_setting("tts_voice", "bogus").unwrap();
+        assert_eq!(tts_voice_setting(&db), "nova"); // invalid → default
+    }
+
+    #[tokio::test]
+    async fn suggestion_accept_routine_creates_it() {
+        let db = test_db();
+        let payload = serde_json::json!({"name":"Standup prep","schedule_type":"daily","hour":9,"minute":0,"prompt":"..."}).to_string();
+        let id = db.insert_suggestion("routine","Standup prep","daily 9am",Some(&payload),"routine:standup").unwrap().unwrap();
+        let out = suggestion_respond(&db, id, true).await.unwrap();
+        assert_eq!(out, "accepted");
+        assert!(db.list_routines().unwrap().iter().any(|r| r.name == "Standup prep"));
+    }
+
+    #[tokio::test]
+    async fn suggestion_dismiss_marks_dismissed_and_notifies() {
+        let db = test_db();
+        let id = db.insert_suggestion("routine","Standup prep","daily 9am",None,"routine:standup2").unwrap().unwrap();
+        let out = suggestion_respond(&db, id, false).await.unwrap();
+        assert_eq!(out, "dismissed");
+        assert_eq!(db.get_suggestion(id).unwrap().unwrap().status, "dismissed");
+        assert!(db.list_notifications().unwrap().iter().any(|n| n.title == "Suggestion dismissed"));
+    }
+
+    #[tokio::test]
+    async fn suggestion_accept_malformed_routine_stays_pending() {
+        let db = test_db();
+        let id = db
+            .insert_suggestion(
+                "routine",
+                "Standup prep",
+                "daily 9am",
+                Some("{not valid json"),
+                "routine:standup-bad",
+            )
+            .unwrap()
+            .unwrap();
+        let out = suggestion_respond(&db, id, true).await.unwrap();
+        assert!(out.starts_with("failed:"), "expected failed:.. got {out}");
+        assert_eq!(db.get_suggestion(id).unwrap().unwrap().status, "pending");
+        assert!(!db.list_routines().unwrap().iter().any(|r| r.name == "Standup prep"));
+        assert!(db.list_notifications().unwrap().iter().any(|n| n.title == "Suggestion couldn't be applied"));
+    }
+
+    #[tokio::test]
+    async fn suggestion_accept_missing_routine_payload_stays_pending() {
+        let db = test_db();
+        let id = db
+            .insert_suggestion("routine", "Standup prep", "daily 9am", None, "routine:standup-missing")
+            .unwrap()
+            .unwrap();
+        let out = suggestion_respond(&db, id, true).await.unwrap();
+        assert!(out.starts_with("failed:"), "expected failed:.. got {out}");
+        assert_eq!(db.get_suggestion(id).unwrap().unwrap().status, "pending");
+        assert!(!db.list_routines().unwrap().iter().any(|r| r.name == "Standup prep"));
+        assert!(db.list_notifications().unwrap().iter().any(|n| n.title == "Suggestion couldn't be applied"));
+    }
+
+    #[tokio::test]
+    async fn suggestion_accept_twice_is_idempotent() {
+        let db = test_db();
+        let payload = serde_json::json!({"name":"Standup prep","schedule_type":"daily","hour":9,"minute":0,"prompt":"..."}).to_string();
+        let id = db.insert_suggestion("routine","Standup prep","daily 9am",Some(&payload),"routine:standup-twice").unwrap().unwrap();
+        let first = suggestion_respond(&db, id, true).await.unwrap();
+        assert_eq!(first, "accepted");
+        let second = suggestion_respond(&db, id, true).await.unwrap();
+        assert_eq!(second, "already resolved");
+        let count = db.list_routines().unwrap().iter().filter(|r| r.name == "Standup prep").count();
+        assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn suggestion_accept_skill_creates_it() {
+        let db = test_db();
+        let _g = crate::skills::tests::skills_test_guard();
+        let payload = serde_json::json!({"name":"Trip Planner","description":"Plan a trip","category":"travel","body":"1. dates\n2. book"}).to_string();
+        let id = db.insert_suggestion("skill","Save Trip Planner skill","noticed you plan trips a lot",Some(&payload),"skill:trip-planner").unwrap().unwrap();
+        let out = suggestion_respond(&db, id, true).await.unwrap();
+        assert_eq!(out, "accepted");
+        assert!(crate::skills::list_skills().unwrap().iter().any(|s| s.slug == "trip-planner"));
+    }
+
+    #[tokio::test]
+    async fn suggestion_accept_malformed_skill_stays_pending() {
+        let db = test_db();
+        let _g = crate::skills::tests::skills_test_guard();
+        let id = db.insert_suggestion("skill","bad","x",Some("{not json"),"skill:bad").unwrap().unwrap();
+        let out = suggestion_respond(&db, id, true).await.unwrap();
+        assert!(out.starts_with("failed"));
+        assert_eq!(db.get_suggestion(id).unwrap().unwrap().status, "pending");
     }
 }

@@ -12,8 +12,9 @@
 
 use std::collections::HashMap;
 
-use crate::db::{Db, Message};
+use crate::db::{Approval, Db, Message};
 use crate::error::{Error, Result};
+use crate::integrations::whatsapp;
 use crate::ops::{self, ChatEvent};
 use crate::providers::{self, AgentTurn, FunctionCall, ToolCallOut};
 use crate::{tools, trust};
@@ -26,6 +27,18 @@ const TOKEN_BUDGET: u64 = 60_000;
 const TOOL_DISABLED_MSG: &str = "TOOL_DISABLED: repeated failures";
 const PENDING_APPROVAL_MSG: &str = "PENDING_APPROVAL: the user has been asked to approve \
 this action out-of-band. Do not retry or work around it; acknowledge and continue.";
+
+/// Appended to the shared chat system prompt for the agent (tool-calling) path only —
+/// plain chat via `providers::stream_chat` never sees this.
+const AGENT_SYSTEM_PROMPT_ADDENDUM: &str = "\n\n## Acting with tools\nYou have tools — use \
+them to act rather than describing what you would do. Read and write tools run \
+automatically. Outbound actions (messages to other people) may require the user's \
+approval: when a tool returns PENDING_APPROVAL, tell the user you've asked for their \
+approval and stop pursuing that action — never retry it or work around it. Never fabricate \
+tool results. Prefer checking real data over guessing. You have skills (listed under \
+'Available skills'). When a skill fits the task, call skill_view with its name to load \
+its full instructions BEFORE acting, and follow its steps. If you work out a new \
+repeatable multi-step recipe, consider skill_create to save it.";
 
 /// Build the model-facing history: a system turn followed by each user/assistant
 /// message as a content-only `AgentTurn`. Pure; the loop's own tool-call/tool-result
@@ -78,7 +91,8 @@ pub async fn run_agent_turn(
     on_event: &(dyn Fn(ChatEvent) + Send + Sync),
 ) -> Result<()> {
     let config = ops::load_config(db)?;
-    let system = ops::assemble_chat_system_prompt(db, &config, conversation_id).await?;
+    let mut system = ops::assemble_chat_system_prompt(db, &config, conversation_id).await?;
+    system.push_str(AGENT_SYSTEM_PROMPT_ADDENDUM);
     let mut turns = build_history_turns(&db.get_messages(conversation_id)?, system);
 
     let tools_json = tools::openai_tools_json();
@@ -213,7 +227,9 @@ async fn handle_tool_call(
                 label: label.clone(),
                 status: "running".into(),
             });
-            match tools::execute(db, &call.name, &args).await {
+            let result = tools::execute(db, &call.name, &args).await;
+            let _ = db.insert_event("tool_call", Some(conversation_id), Some(&call.name), None);
+            match result {
                 Ok(result) => {
                     on_event(ChatEvent::Tool {
                         name: call.name.clone(),
@@ -237,12 +253,18 @@ async fn handle_tool_call(
             }
         }
         Ok(trust::Decision::Ask) => match trust::request_approval(db, conversation_id, &call.name, &args) {
-            Ok(approval) => {
+            Ok((approval, newly_created)) => {
                 on_event(ChatEvent::Approval {
                     approval_id: approval.id,
-                    summary: approval.summary,
+                    summary: approval.summary.clone(),
                     tool: call.name.clone(),
                 });
+                // Only push WhatsApp buttons for a freshly-filed approval — request_approval
+                // dedupes identical re-asks, and pushing again on every model retry would
+                // spam the user with duplicate button messages for the same approval.
+                if newly_created {
+                    push_whatsapp_approval(db, &approval).await;
+                }
                 PENDING_APPROVAL_MSG.to_string()
             }
             Err(e) => e.to_string(),
@@ -257,6 +279,22 @@ async fn handle_tool_call(
             }
         }
     }
+}
+
+/// Best-effort push of approve/reject buttons to WhatsApp for a freshly-filed approval.
+/// No-op (silently) if WhatsApp isn't connected, no number is configured, or the send
+/// fails — this is a convenience notification, not the approval's system of record.
+async fn push_whatsapp_approval(db: &Db, approval: &Approval) {
+    if !whatsapp::is_connected().unwrap_or(false) {
+        return;
+    }
+    let Ok(Some(my_number)) = db.get_setting("whatsapp_my_number") else {
+        return;
+    };
+    if my_number.is_empty() {
+        return;
+    }
+    let _ = whatsapp::send_approval_buttons(&my_number, approval.id, &approval.summary).await;
 }
 
 /// The content of the most recent assistant `AgentTurn`, if any (used at the iteration cap).
@@ -304,14 +342,14 @@ mod tests {
     }
 
     fn test_db() -> Db {
-        let dir = std::env::temp_dir().join(format!("donna-agent-{}-{}", std::process::id(), rand_suffix()));
+        crate::secrets::init_test_file_store();
+        let dir = std::env::temp_dir().join(format!(
+            "donna-agent-{}-{}",
+            std::process::id(),
+            crate::db::unique_test_suffix()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         Db::open(&dir.join("t.sqlite")).unwrap()
-    }
-
-    fn rand_suffix() -> u64 {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64
     }
 
     /// Bad JSON arguments must count as a strike, same as an execute() error: the

@@ -67,7 +67,19 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Donna ${{ github.ref_name }}"
-          releaseBody: "See the assets to download and install Donna for your platform."
+          releaseBody: |
+            ### Which file do I download?
+
+            | Your computer | Download this |
+            | --- | --- |
+            | Mac · Apple Silicon (M1–M4) | the `aarch64.dmg` file |
+            | Mac · Intel | the `x64.dmg` file |
+            | Windows | the `x64-setup.exe` file |
+            | Linux | the `.AppImage` file (or `.deb` / `.rpm` for your distro) |
+
+            Or skip this page entirely — the download button at https://duckyquang.github.io/Donna/ picks the right file for you.
+
+            Everything else here (`.sig`, `latest.json`, `.app.tar.gz`) powers Donna's built-in auto-updater; you can ignore it.
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}

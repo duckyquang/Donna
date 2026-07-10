@@ -1,4 +1,6 @@
-// OS-aware download button + latest version from the GitHub Releases API.
+// OS-aware download button, per-platform direct links, and the latest version —
+// all from the GitHub Releases API. Every link downloads the installer directly;
+// nobody has to pick through the release's asset list.
 const REPO = "duckyquang/Donna";
 
 function detectOS() {
@@ -28,25 +30,46 @@ async function latestAssets() {
     macIntel: find(/x64\.dmg$/),
     windows: find(/set(up)?\.exe$/i) || find(/\.msi$/) || find(/\.exe$/),
     linux: find(/\.AppImage$/) || find(/\.deb$/),
+    linuxDeb: find(/\.deb$/),
   };
 }
 
 (async () => {
   const os = detectOS();
   const btn = document.querySelector("[data-download]");
-  if (btn) {
-    btn.textContent = OS_LABEL[os];
-    const assets = await latestAssets().catch(() => null);
-    if (!assets) return; // button already links to the releases page
-    if (assets[os]) btn.href = assets[os];
-    const v = document.querySelector("[data-version]");
-    if (v && assets.version) v.textContent = `· ${assets.version}`;
-    if (os === "mac") {
-      const intelLink = document.querySelector("[data-mac-intel]");
-      if (intelLink) {
-        intelLink.hidden = false;
-        if (assets.macIntel) intelLink.href = assets.macIntel;
-      }
+  if (btn) btn.textContent = OS_LABEL[os];
+  const assets = await latestAssets().catch(() => null);
+  if (!assets) return; // links already point at the releases page
+  if (btn && assets[os]) btn.href = assets[os];
+
+  const v = document.querySelector("[data-version]");
+  if (v && assets.version) v.textContent = `· ${assets.version}`;
+
+  const intel = document.querySelector("[data-mac-intel]");
+  if (intel && os === "mac" && assets.macIntel) {
+    intel.href = assets.macIntel;
+    intel.hidden = false;
+  }
+
+  // Quiet per-platform row under the main button — direct downloads, no asset soup.
+  const row = document.querySelector("[data-platforms]");
+  if (row) {
+    const entries = [
+      ["macOS · Apple Silicon", assets.mac],
+      ["macOS · Intel", assets.macIntel],
+      ["Windows", assets.windows],
+      ["Linux · AppImage", assets.linux],
+      ["Linux · deb", assets.linuxDeb],
+    ];
+    for (const [label, href] of entries) {
+      if (!href) continue;
+      const a = document.createElement("a");
+      a.textContent = label;
+      a.href = href;
+      a.target = "_blank";
+      a.rel = "noopener";
+      row.appendChild(a);
     }
+    if (row.children.length > 0) row.hidden = false;
   }
 })();

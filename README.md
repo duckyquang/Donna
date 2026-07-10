@@ -1,6 +1,6 @@
 <div align="center">
 
-# Donna
+<img src="site/assets/donna-banner.png" alt="Donna — the best AI assistant that proactively does sh*t for you" width="100%" />
 
 ### Your own AI personal assistant — private, local, and proactive.
 

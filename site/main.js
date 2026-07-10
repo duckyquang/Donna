@@ -73,3 +73,30 @@ async function latestAssets() {
     if (row.children.length > 0) row.hidden = false;
   }
 })();
+
+// Gentle scroll reveals with per-group stagger. Decorative only — content is
+// visible without JS, and reduced-motion drops the movement in CSS.
+(() => {
+  const revealables = document.querySelectorAll(".reveal");
+  if (!("IntersectionObserver" in window)) {
+    for (const el of revealables) el.classList.add("is-visible");
+    return;
+  }
+  const io = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add("is-visible");
+          io.unobserve(entry.target);
+        }
+      }
+    },
+    { rootMargin: "0px 0px -60px 0px" },
+  );
+  for (const el of revealables) {
+    const group = el.parentElement.querySelectorAll(":scope > .reveal");
+    const idx = Array.prototype.indexOf.call(group, el);
+    el.style.setProperty("--reveal-delay", `${Math.min(idx, 6) * 60}ms`);
+    io.observe(el);
+  }
+})();

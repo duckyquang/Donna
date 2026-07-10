@@ -50,28 +50,6 @@ async function latestAssets() {
     intel.href = assets.macIntel;
     intel.hidden = false;
   }
-
-  // Quiet per-platform row under the main button — direct downloads, no asset soup.
-  const row = document.querySelector("[data-platforms]");
-  if (row) {
-    const entries = [
-      ["macOS · Apple Silicon", assets.mac],
-      ["macOS · Intel", assets.macIntel],
-      ["Windows", assets.windows],
-      ["Linux · AppImage", assets.linux],
-      ["Linux · deb", assets.linuxDeb],
-    ];
-    for (const [label, href] of entries) {
-      if (!href) continue;
-      const a = document.createElement("a");
-      a.textContent = label;
-      a.href = href;
-      a.target = "_blank";
-      a.rel = "noopener";
-      row.appendChild(a);
-    }
-    if (row.children.length > 0) row.hidden = false;
-  }
 })();
 
 // Gentle scroll reveals with per-group stagger. Decorative only — content is

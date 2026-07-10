@@ -2,250 +2,26 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Donna Docs — technical questions, answered</title>
-  <meta name="description" content="How Donna works under the hood: architecture, data and privacy, local and cloud models, integrations, self-hosting, updates, and troubleshooting." />
-  <link rel="icon" href="assets/donna-logo.png" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css" />
+  <title>Donna Docs</title>
+  <noscript><meta http-equiv="refresh" content="0; url=docs/" /></noscript>
+  <script>
+    // The docs moved to docs/ (one page per topic). Map old #section anchors across.
+    var map = {
+      "getting-started": "",
+      "architecture": "architecture.html",
+      "models": "models.html",
+      "privacy-data": "privacy.html",
+      "integrations-setup": "integrations.html",
+      "self-hosting": "self-hosting.html",
+      "updates": "updates.html",
+      "troubleshooting": "troubleshooting.html",
+      "building": "building.html",
+    };
+    var hash = location.hash.slice(1);
+    location.replace("docs/" + (map[hash] !== undefined ? map[hash] : ""));
+  </script>
 </head>
 <body>
-
-<nav class="nav">
-  <a class="brand" href="index.html"><img src="assets/donna-logo.png" alt="" /><span>Donna</span></a>
-  <div class="nav-links">
-    <a href="index.html#features">Features</a>
-    <a href="index.html#integrations">Integrations</a>
-    <a href="index.html#privacy">Privacy</a>
-    <a href="index.html#faq">FAQ</a>
-    <a href="docs.html" aria-current="page">Docs</a>
-  </div>
-  <div class="nav-cta">
-    <a href="https://github.com/duckyquang/Donna" class="ghost" target="_blank" rel="noopener">GitHub</a>
-    <a href="index.html#download" class="button small">Download</a>
-  </div>
-</nav>
-
-<main class="docs-main">
-  <span class="pill">Docs</span>
-  <h1>Technical questions, answered</h1>
-  <p class="docs-lede">Everything the landing page glosses over: what actually runs on your machine, where your data lives, and how to fix things when they misbehave.</p>
-
-  <nav class="docs-toc" aria-label="Sections">
-    <a href="#getting-started">Getting started</a>
-    <a href="#architecture">Architecture</a>
-    <a href="#models">Models</a>
-    <a href="#privacy-data">Privacy &amp; data</a>
-    <a href="#integrations-setup">Integrations</a>
-    <a href="#self-hosting">Self-hosting</a>
-    <a href="#updates">Updates</a>
-    <a href="#troubleshooting">Troubleshooting</a>
-    <a href="#building">Building from source</a>
-  </nav>
-
-  <section class="docs-section" id="getting-started">
-    <h2>Getting started</h2>
-    <div class="qa">
-      <h3>What do I need to run Donna?</h3>
-      <ul>
-        <li><strong>macOS:</strong> Apple Silicon or Intel (separate downloads; the site’s button picks Apple Silicon, the “Intel Mac?” link is next to it).</li>
-        <li><strong>Windows:</strong> Windows 10 or later, 64-bit. The installer sets up WebView2 automatically if it’s missing.</li>
-        <li><strong>Linux:</strong> x86_64 with a recent glibc; AppImage, <code>.deb</code>, and <code>.rpm</code> are provided.</li>
-        <li>For the free local model: roughly 4 GB of free disk (runtime + model) and 8 GB of RAM is a comfortable floor. Cloud keys need almost nothing.</li>
-      </ul>
-    </div>
-    <div class="qa">
-      <h3>Why does my OS warn me on first launch?</h3>
-      <p>Donna isn’t code-signed with Apple or Microsoft yet: certificates cost money and this is a free project. The binaries are built in public by <a href="https://github.com/duckyquang/Donna/actions" target="_blank" rel="noopener">GitHub Actions from the open source</a>, so you can audit exactly what you’re running.</p>
-      <p><strong>macOS:</strong> System Settings → Privacy &amp; Security → <strong>Open Anyway</strong>. <strong>Windows:</strong> More info → <strong>Run anyway</strong>. Each is needed once.</p>
-    </div>
-    <div class="qa">
-      <h3>What happens on first launch?</h3>
-      <p>Donna starts her built-in brain (a local server bundled inside the app), then walks you through choosing how she thinks: a free local model she downloads and manages herself, or your own OpenAI, Anthropic, or Google API key. After that you can connect tools from the Integrations page. No terminal, no config files.</p>
-    </div>
-    <div class="qa">
-      <h3>Where did the window go when I closed it?</h3>
-      <p>Closing the window hides Donna instead of quitting her, so reminders and briefings keep working. She lives in the menu bar (macOS) or system tray (Windows/Linux). Use <strong>Open Donna</strong> there to bring the window back, or <strong>Quit Donna</strong> to actually stop everything.</p>
-    </div>
-  </section>
-
-  <section class="docs-section" id="architecture">
-    <h2>Architecture</h2>
-    <p class="lede">One app, two processes — by design.</p>
-    <div class="qa">
-      <h3>What actually runs on my machine?</h3>
-      <p>Two things. The <strong>Donna app</strong> is the window you see. Her <strong>brain</strong> is <code>donna-server</code>, a small Rust server bundled inside the app that owns the database, memory, scheduler, and integrations. The app starts it automatically on launch and stops it when you quit.</p>
-      <p>This split is deliberate: the same server binary can run on an always-on box instead (see <a href="#self-hosting">self-hosting</a>), and the app becomes a thin client of it.</p>
-    </div>
-    <div class="qa">
-      <h3>What ports does Donna use?</h3>
-      <ul>
-        <li><code>8377</code>: the built-in server. If something else already uses it, Donna picks a random free port instead.</li>
-        <li><code>11434</code>: the local model runtime (Ollama), when you use the free local option.</li>
-      </ul>
-      <p>Both listen on <code>127.0.0.1</code> only, so nothing is exposed to your network. Requests to the server require a bearer token that Donna generates on first run and stores with owner-only file permissions.</p>
-    </div>
-    <div class="qa">
-      <h3>Where does Donna keep her files?</h3>
-      <table>
-        <tr><th>OS</th><th>Data folder</th></tr>
-        <tr><td>macOS</td><td><code>~/Library/Application Support/ai.donna.app</code></td></tr>
-        <tr><td>Windows</td><td><code>%APPDATA%\ai.donna.app</code></td></tr>
-        <tr><td>Linux</td><td><code>~/.local/share/ai.donna.app</code></td></tr>
-      </table>
-      <p>Inside: <code>server/</code> (the brain’s database, knowledge base, and credentials), <code>server-token</code> (the local auth token), and <code>ollama/</code> (the managed model runtime, if you chose the local option). Local models themselves are stored by the runtime under <code>~/.ollama/models</code>.</p>
-    </div>
-  </section>
-
-  <section class="docs-section" id="models">
-    <h2>Models</h2>
-    <div class="qa">
-      <h3>How does the free local option work?</h3>
-      <p>Donna downloads a pinned release of the <a href="https://ollama.com" target="_blank" rel="noopener">Ollama</a> runtime into her own data folder, runs it herself, and pulls a default model (<code>qwen2.5:3b</code>, about 2 GB) with a progress bar. No admin rights, no separate install, and everything runs on your hardware; nothing ever leaves your machine.</p>
-      <p>If you already run your own Ollama, Donna detects and uses it instead of installing anything.</p>
-    </div>
-    <div class="qa">
-      <h3>Can I use a different local model?</h3>
-      <p>Yes. Any model your Ollama has pulled shows up in <strong>Settings → Model</strong>. Pull new ones with <code>ollama pull &lt;model&gt;</code> (or ask Donna once model management lands in Settings). Bigger models are smarter and slower; 3B–8B models are the sweet spot for most laptops.</p>
-    </div>
-    <div class="qa">
-      <h3>How do cloud models work, and what do they cost?</h3>
-      <p>Paste an API key from OpenAI, Anthropic, or Google in onboarding or <strong>Settings → Provider</strong>. You pay the provider directly for what you use; Donna adds no markup and has no subscription. Voice features (push-to-talk transcription and spoken replies) currently require an OpenAI key.</p>
-    </div>
-    <div class="qa">
-      <h3>Where are my API keys stored?</h3>
-      <p>In the brain’s credentials store: a file inside Donna’s data folder with owner-only permissions (<code>0600</code>), never in the repo, never sent anywhere except to the provider you chose. Google OAuth client credentials additionally use your OS keychain on the desktop side.</p>
-    </div>
-  </section>
-
-  <section class="docs-section" id="privacy-data">
-    <h2>Privacy &amp; data</h2>
-    <div class="qa">
-      <h3>What leaves my machine, exactly?</h3>
-      <ul>
-        <li><strong>Nothing</strong>, with a local model and no integrations connected.</li>
-        <li><strong>Your prompts and relevant context</strong> go to the model provider you chose, when you use a cloud model.</li>
-        <li><strong>Integration traffic</strong> goes to that service (Google, Slack, WhatsApp, Fathom) when you connect it and Donna acts on it.</li>
-        <li><strong>An update check</strong> hits GitHub at launch to see if a newer version exists.</li>
-      </ul>
-      <p>There is no telemetry, no analytics, and no account. The code is MIT-licensed if you want to verify.</p>
-    </div>
-    <div class="qa">
-      <h3>How do I back up, move, or wipe my data?</h3>
-      <p><strong>Back up / move:</strong> Settings → <strong>Export server bundle</strong> produces a single archive of your database, knowledge base, and credentials, importable on a self-hosted server. <strong>Wipe:</strong> quit Donna and delete the data folder listed <a href="#architecture">above</a>; next launch starts fresh. Uninstalling the app does not delete the data folder.</p>
-    </div>
-  </section>
-
-  <section class="docs-section" id="integrations-setup">
-    <h2>Integrations</h2>
-    <div class="qa">
-      <h3>How does the Google connection work?</h3>
-      <p>Donna uses Google’s standard OAuth flow: you create a client in your own Google Cloud project (the Integrations page walks you through it), then sign in through your browser. Tokens are refreshed automatically. Calendar has full two-way sync; Gmail, Docs, and Drive are connected for reading with more actions on the roadmap.</p>
-    </div>
-    <div class="qa">
-      <h3>Slack, Fathom, Discord?</h3>
-      <p><strong>Slack:</strong> paste a bot token (<code>xoxb-…</code>) from a Slack app you install to your workspace; Donna can read channels and send messages. <strong>Fathom:</strong> connect once and meeting recaps land in Docs when calls end. <strong>Discord:</strong> a bot connection for reading and sending in your servers.</p>
-    </div>
-    <div class="qa">
-      <h3>Can I text Donna on WhatsApp?</h3>
-      <p>Outbound messages (Donna sending to you) work in the packaged app. Two-way texting (you message Donna and she replies) needs her brain reachable from the internet for Meta’s webhooks, which means <a href="#self-hosting">self-hosting</a> with a public HTTPS address. Voice notes work in both directions once that’s set up, and approval requests arrive as Approve/Reject buttons.</p>
-    </div>
-  </section>
-
-  <section class="docs-section" id="self-hosting">
-    <h2>Self-hosting (advanced)</h2>
-    <p class="lede">For a Donna that works while your laptop sleeps.</p>
-    <div class="qa">
-      <h3>Why self-host?</h3>
-      <p>The built-in brain stops when your computer is off. Run <code>donna-server</code> on a VPS, home server, or Raspberry Pi instead and Donna is on duty 24/7: proactive routines fire, WhatsApp two-way works, and every desktop app you point at it shares one memory.</p>
-    </div>
-    <div class="qa">
-      <h3>The short version</h3>
-      <pre><code>git clone https://github.com/duckyquang/Donna.git
-cd Donna/donna-server
-cp .env.example .env   # set DONNA_TOKEN to a real secret
-docker compose up -d
-curl http://localhost:8377/health   # → ok</code></pre>
-      <p>Then in the desktop app: <strong>Settings → Server</strong>, enter the server’s URL and your <code>DONNA_TOKEN</code>, and Test connection. To migrate existing data, export a bundle from the app and run <code>donna-server import</code>; full steps in the <a href="https://github.com/duckyquang/Donna/blob/main/donna-server/README.md" target="_blank" rel="noopener">server README</a>.</p>
-    </div>
-    <div class="qa">
-      <h3>Environment variables</h3>
-      <table>
-        <tr><th>Variable</th><th>Required</th><th>Meaning</th></tr>
-        <tr><td><code>DONNA_TOKEN</code></td><td>Yes</td><td>Bearer token clients must send. The server refuses to start without it.</td></tr>
-        <tr><td><code>DONNA_PORT</code></td><td>No</td><td>Listen port, default <code>8377</code>.</td></tr>
-        <tr><td><code>DONNA_BIND</code></td><td>No</td><td>Bind address, default <code>0.0.0.0</code> (the packaged app’s built-in server uses <code>127.0.0.1</code>).</td></tr>
-        <tr><td><code>DONNA_DATA_DIR</code></td><td>No</td><td>Where the database, knowledge base, and credentials live.</td></tr>
-        <tr><td><code>TUNNEL_TOKEN</code></td><td>No</td><td>Cloudflare Tunnel token for exposing the server publicly (needed for WhatsApp webhooks).</td></tr>
-        <tr><td><code>DONNA_WA_VERIFY_TOKEN</code> / <code>DONNA_WA_APP_SECRET</code></td><td>No</td><td>WhatsApp webhook handshake and signature verification.</td></tr>
-      </table>
-    </div>
-  </section>
-
-  <section class="docs-section" id="updates">
-    <h2>Updates</h2>
-    <div class="qa">
-      <h3>How do updates work?</h3>
-      <p>Donna checks GitHub Releases once at launch. If a newer version exists, a banner offers <strong>Update &amp; restart</strong>: one click downloads, verifies, and relaunches. Updates are cryptographically signed (minisign); the app refuses anything that doesn’t match the public key baked into it. No update ever installs without your click.</p>
-    </div>
-    <div class="qa">
-      <h3>Offline or on a flaky connection?</h3>
-      <p>The check fails silently and tries again next launch. Nothing blocks, nothing nags.</p>
-    </div>
-  </section>
-
-  <section class="docs-section" id="troubleshooting">
-    <h2>Troubleshooting</h2>
-    <div class="qa">
-      <h3>“Donna’s brain didn’t start”</h3>
-      <p>The built-in server couldn’t come up. <strong>Retry</strong> usually fixes it (first launches can be slow while your OS scans the new binaries; Donna retries a few times on her own). If it persists, quit fully (tray → Quit), relaunch, and if it still fails, <a href="https://github.com/duckyquang/Donna/issues" target="_blank" rel="noopener">open an issue</a> with your OS version.</p>
-    </div>
-    <div class="qa">
-      <h3>The local model download failed</h3>
-      <p>Usually a network hiccup; <strong>Try again</strong> resumes where it left off. As a fallback, install <a href="https://ollama.com/download" target="_blank" rel="noopener">Ollama</a> yourself; Donna detects it and continues. Model downloads are large (about 2 GB), so a slow connection takes a while.</p>
-    </div>
-    <div class="qa">
-      <h3>The Linux AppImage won’t start</h3>
-      <p>Make it executable first: <code>chmod +x Donna_*.AppImage</code>, then run it. On distros without FUSE 2, install <code>libfuse2</code> or use the <code>.deb</code>/<code>.rpm</code> instead.</p>
-    </div>
-    <div class="qa">
-      <h3>Donna shows “unreachable — check the server”</h3>
-      <p>If you use the built-in brain, quit from the tray and relaunch. If you point at a self-hosted server, check the URL and token in <strong>Settings → Server</strong> (Test connection), and that the box is up. <strong>Use built-in server</strong> in the same card switches you back to the bundled brain anytime.</p>
-    </div>
-    <div class="qa">
-      <h3>Something else is on port 8377</h3>
-      <p>Fine — the built-in server notices and moves to a random free port automatically. If you run a self-hosted server on the same machine for development, the two coexist; just mind which one Settings points at.</p>
-    </div>
-  </section>
-
-  <section class="docs-section" id="building">
-    <h2>Building from source</h2>
-    <div class="qa">
-      <h3>Prerequisites and the three commands</h3>
-      <p>Node.js 20+, Rust (stable), and your platform’s <a href="https://tauri.app/start/prerequisites/" target="_blank" rel="noopener">Tauri prerequisites</a>. Then:</p>
-      <pre><code>npm install
-npm run sidecar      # builds the bundled donna-server once
-npm run tauri:dev    # run in development
-npm run tauri:build  # produce an installer</code></pre>
-      <p>Full details, including release CI and updater signing, live in <a href="https://github.com/duckyquang/Donna/blob/main/docs/BUILD.md" target="_blank" rel="noopener">docs/BUILD.md</a>. Contributions are welcome; start with <a href="https://github.com/duckyquang/Donna/blob/main/CONTEXT.md" target="_blank" rel="noopener">CONTEXT.md</a>.</p>
-    </div>
-  </section>
-</main>
-
-<footer class="footer">
-  <div class="footer-card">
-    <div class="footer-bottom" style="border-top: none; margin-top: 0; padding-top: 0;">
-      <span>© 2026 Donna. Free &amp; open source.</span>
-      <div class="footer-bottom-links">
-        <a href="index.html">Home</a>
-        <a href="https://github.com/duckyquang/Donna" target="_blank" rel="noopener">Source code</a>
-        <a href="https://github.com/duckyquang/Donna/issues" target="_blank" rel="noopener">Report an issue</a>
-      </div>
-    </div>
-  </div>
-</footer>
-
+  <p>The docs moved to <a href="docs/">docs/</a>.</p>
 </body>
 </html>

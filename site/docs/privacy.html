@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Privacy & data — Donna Docs</title>
+  <meta name="description" content="Exactly what leaves your machine, and how to back up or wipe everything." />
+  <link rel="icon" href="../assets/donna-logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <a class="brand" href="../index.html"><img src="../assets/donna-logo.png" alt="" /><span>Donna</span></a>
+  <div class="nav-links">
+    <a href="../index.html#features">Features</a>
+    <a href="../index.html#integrations">Integrations</a>
+    <a href="../index.html#privacy">Privacy</a>
+    <a href="../index.html#faq">FAQ</a>
+    <a href="./" aria-current="page">Docs</a>
+  </div>
+  <div class="nav-cta">
+    <a href="https://github.com/duckyquang/Donna" class="ghost" target="_blank" rel="noopener">GitHub</a>
+    <a href="../index.html#download" class="button small">Download</a>
+  </div>
+</nav>
+
+<div class="docs-layout">
+  <aside class="docs-side">
+    <div class="docs-search">
+      <input type="search" placeholder="Search the docs…" aria-label="Search the docs" data-docs-search />
+    </div>
+    <nav class="docs-nav" aria-label="Docs pages">
+      <a href="./">Getting started</a>
+      <a href="architecture.html">Architecture</a>
+      <a href="models.html">Models</a>
+      <a href="privacy.html" aria-current="page">Privacy &amp; data</a>
+      <a href="integrations.html">Integrations</a>
+      <a href="self-hosting.html">Self-hosting</a>
+      <a href="updates.html">Updates</a>
+      <a href="troubleshooting.html">Troubleshooting</a>
+      <a href="building.html">Building from source</a>
+    </nav>
+  </aside>
+  <main class="docs-content">
+    <span class="pill">Docs</span>
+    <h1>Privacy & data</h1>
+    <p class="lede">Exactly what leaves your machine, and how to back up or wipe everything.</p>
+<div class="qa" id="what-leaves-my-machine-exactly">
+  <h3>What leaves my machine, exactly?</h3>
+  <ul>
+    <li><strong>Nothing</strong>, with a local model and no integrations connected.</li>
+    <li><strong>Your prompts and relevant context</strong> go to the model provider you chose, when you use a cloud model.</li>
+    <li><strong>Integration traffic</strong> goes to that service (Google, Slack, WhatsApp, Fathom) when you connect it and Donna acts on it.</li>
+    <li><strong>An update check</strong> hits GitHub at launch to see if a newer version exists.</li>
+  </ul>
+  <p>There is no telemetry, no analytics, and no account. The code is MIT-licensed if you want to verify.</p>
+</div>
+<div class="qa" id="how-do-i-back-up-move-or-wipe-my-data">
+  <h3>How do I back up, move, or wipe my data?</h3>
+  <p><strong>Back up / move:</strong> Settings → <strong>Export server bundle</strong> produces a single archive of your database, knowledge base, and credentials, importable on a self-hosted server. <strong>Wipe:</strong> quit Donna and delete the data folder listed <a href="#architecture">above</a>; next launch starts fresh. Uninstalling the app does not delete the data folder.</p>
+</div>
+    <div class="docs-pager">
+      <a href="models.html">← Models</a>
+      <span class="spacer"></span>
+      <a href="integrations.html">Integrations →</a>
+    </div>
+  </main>
+</div>
+
+<script src="search-index.js"></script>
+<script src="search.js"></script>
+</body>
+</html>

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Models — Donna Docs</title>
+  <meta name="description" content="The free local option, swapping models, and bringing your own API key." />
+  <link rel="icon" href="../assets/donna-logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <a class="brand" href="../index.html"><img src="../assets/donna-logo.png" alt="" /><span>Donna</span></a>
+  <div class="nav-links">
+    <a href="../index.html#features">Features</a>
+    <a href="../index.html#integrations">Integrations</a>
+    <a href="../index.html#privacy">Privacy</a>
+    <a href="../index.html#faq">FAQ</a>
+    <a href="./" aria-current="page">Docs</a>
+  </div>
+  <div class="nav-cta">
+    <a href="https://github.com/duckyquang/Donna" class="ghost" target="_blank" rel="noopener">GitHub</a>
+    <a href="../index.html#download" class="button small">Download</a>
+  </div>
+</nav>
+
+<div class="docs-layout">
+  <aside class="docs-side">
+    <div class="docs-search">
+      <input type="search" placeholder="Search the docs…" aria-label="Search the docs" data-docs-search />
+    </div>
+    <nav class="docs-nav" aria-label="Docs pages">
+      <a href="./">Getting started</a>
+      <a href="architecture.html">Architecture</a>
+      <a href="models.html" aria-current="page">Models</a>
+      <a href="privacy.html">Privacy &amp; data</a>
+      <a href="integrations.html">Integrations</a>
+      <a href="self-hosting.html">Self-hosting</a>
+      <a href="updates.html">Updates</a>
+      <a href="troubleshooting.html">Troubleshooting</a>
+      <a href="building.html">Building from source</a>
+    </nav>
+  </aside>
+  <main class="docs-content">
+    <span class="pill">Docs</span>
+    <h1>Models</h1>
+    <p class="lede">The free local option, swapping models, and bringing your own API key.</p>
+<div class="qa" id="how-does-the-free-local-option-work">
+  <h3>How does the free local option work?</h3>
+  <p>Donna downloads a pinned release of the <a href="https://ollama.com" target="_blank" rel="noopener">Ollama</a> runtime into her own data folder, runs it herself, and pulls a default model (<code>qwen2.5:3b</code>, about 2 GB) with a progress bar. No admin rights, no separate install, and everything runs on your hardware; nothing ever leaves your machine.</p>
+  <p>If you already run your own Ollama, Donna detects and uses it instead of installing anything.</p>
+</div>
+<div class="qa" id="can-i-use-a-different-local-model">
+  <h3>Can I use a different local model?</h3>
+  <p>Yes. Any model your Ollama has pulled shows up in <strong>Settings → Model</strong>. Pull new ones with <code>ollama pull &lt;model&gt;</code> (or ask Donna once model management lands in Settings). Bigger models are smarter and slower; 3B–8B models are the sweet spot for most laptops.</p>
+</div>
+<div class="qa" id="how-do-cloud-models-work-and-what-do-they-cost">
+  <h3>How do cloud models work, and what do they cost?</h3>
+  <p>Paste an API key from OpenAI, Anthropic, or Google in onboarding or <strong>Settings → Provider</strong>. You pay the provider directly for what you use; Donna adds no markup and has no subscription. Voice features (push-to-talk transcription and spoken replies) currently require an OpenAI key.</p>
+</div>
+<div class="qa" id="where-are-my-api-keys-stored">
+  <h3>Where are my API keys stored?</h3>
+  <p>In the brain’s credentials store: a file inside Donna’s data folder with owner-only permissions (<code>0600</code>), never in the repo, never sent anywhere except to the provider you chose. Google OAuth client credentials additionally use your OS keychain on the desktop side.</p>
+</div>
+    <div class="docs-pager">
+      <a href="architecture.html">← Architecture</a>
+      <span class="spacer"></span>
+      <a href="privacy.html">Privacy &amp; data →</a>
+    </div>
+  </main>
+</div>
+
+<script src="search-index.js"></script>
+<script src="search.js"></script>
+</body>
+</html>

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Architecture — Donna Docs</title>
+  <meta name="description" content="One app, two processes — what actually runs, where, and on which ports." />
+  <link rel="icon" href="../assets/donna-logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <a class="brand" href="../index.html"><img src="../assets/donna-logo.png" alt="" /><span>Donna</span></a>
+  <div class="nav-links">
+    <a href="../index.html#features">Features</a>
+    <a href="../index.html#integrations">Integrations</a>
+    <a href="../index.html#privacy">Privacy</a>
+    <a href="../index.html#faq">FAQ</a>
+    <a href="./" aria-current="page">Docs</a>
+  </div>
+  <div class="nav-cta">
+    <a href="https://github.com/duckyquang/Donna" class="ghost" target="_blank" rel="noopener">GitHub</a>
+    <a href="../index.html#download" class="button small">Download</a>
+  </div>
+</nav>
+
+<div class="docs-layout">
+  <aside class="docs-side">
+    <div class="docs-search">
+      <input type="search" placeholder="Search the docs…" aria-label="Search the docs" data-docs-search />
+    </div>
+    <nav class="docs-nav" aria-label="Docs pages">
+      <a href="./">Getting started</a>
+      <a href="architecture.html" aria-current="page">Architecture</a>
+      <a href="models.html">Models</a>
+      <a href="privacy.html">Privacy &amp; data</a>
+      <a href="integrations.html">Integrations</a>
+      <a href="self-hosting.html">Self-hosting</a>
+      <a href="updates.html">Updates</a>
+      <a href="troubleshooting.html">Troubleshooting</a>
+      <a href="building.html">Building from source</a>
+    </nav>
+  </aside>
+  <main class="docs-content">
+    <span class="pill">Docs</span>
+    <h1>Architecture</h1>
+    <p class="lede">One app, two processes — what actually runs, where, and on which ports.</p>
+<div class="qa" id="what-actually-runs-on-my-machine">
+  <h3>What actually runs on my machine?</h3>
+  <p>Two things. The <strong>Donna app</strong> is the window you see. Her <strong>brain</strong> is <code>donna-server</code>, a small Rust server bundled inside the app that owns the database, memory, scheduler, and integrations. The app starts it automatically on launch and stops it when you quit.</p>
+  <p>This split is deliberate: the same server binary can run on an always-on box instead (see <a href="#self-hosting">self-hosting</a>), and the app becomes a thin client of it.</p>
+</div>
+<div class="qa" id="what-ports-does-donna-use">
+  <h3>What ports does Donna use?</h3>
+  <ul>
+    <li><code>8377</code>: the built-in server. If something else already uses it, Donna picks a random free port instead.</li>
+    <li><code>11434</code>: the local model runtime (Ollama), when you use the free local option.</li>
+  </ul>
+  <p>Both listen on <code>127.0.0.1</code> only, so nothing is exposed to your network. Requests to the server require a bearer token that Donna generates on first run and stores with owner-only file permissions.</p>
+</div>
+<div class="qa" id="where-does-donna-keep-her-files">
+  <h3>Where does Donna keep her files?</h3>
+  <table>
+    <tr><th>OS</th><th>Data folder</th></tr>
+    <tr><td>macOS</td><td><code>~/Library/Application Support/ai.donna.app</code></td></tr>
+    <tr><td>Windows</td><td><code>%APPDATA%\ai.donna.app</code></td></tr>
+    <tr><td>Linux</td><td><code>~/.local/share/ai.donna.app</code></td></tr>
+  </table>
+  <p>Inside: <code>server/</code> (the brain’s database, knowledge base, and credentials), <code>server-token</code> (the local auth token), and <code>ollama/</code> (the managed model runtime, if you chose the local option). Local models themselves are stored by the runtime under <code>~/.ollama/models</code>.</p>
+</div>
+    <div class="docs-pager">
+      <a href="./">← Getting started</a>
+      <span class="spacer"></span>
+      <a href="models.html">Models →</a>
+    </div>
+  </main>
+</div>
+
+<script src="search-index.js"></script>
+<script src="search.js"></script>
+</body>
+</html>

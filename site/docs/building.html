@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Building from source — Donna Docs</title>
+  <meta name="description" content="Node, Rust, and three commands." />
+  <link rel="icon" href="../assets/donna-logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <a class="brand" href="../index.html"><img src="../assets/donna-logo.png" alt="" /><span>Donna</span></a>
+  <div class="nav-links">
+    <a href="../index.html#features">Features</a>
+    <a href="../index.html#integrations">Integrations</a>
+    <a href="../index.html#privacy">Privacy</a>
+    <a href="../index.html#faq">FAQ</a>
+    <a href="./" aria-current="page">Docs</a>
+  </div>
+  <div class="nav-cta">
+    <a href="https://github.com/duckyquang/Donna" class="ghost" target="_blank" rel="noopener">GitHub</a>
+    <a href="../index.html#download" class="button small">Download</a>
+  </div>
+</nav>
+
+<div class="docs-layout">
+  <aside class="docs-side">
+    <div class="docs-search">
+      <input type="search" placeholder="Search the docs…" aria-label="Search the docs" data-docs-search />
+    </div>
+    <nav class="docs-nav" aria-label="Docs pages">
+      <a href="./">Getting started</a>
+      <a href="architecture.html">Architecture</a>
+      <a href="models.html">Models</a>
+      <a href="privacy.html">Privacy &amp; data</a>
+      <a href="integrations.html">Integrations</a>
+      <a href="self-hosting.html">Self-hosting</a>
+      <a href="updates.html">Updates</a>
+      <a href="troubleshooting.html">Troubleshooting</a>
+      <a href="building.html" aria-current="page">Building from source</a>
+    </nav>
+  </aside>
+  <main class="docs-content">
+    <span class="pill">Docs</span>
+    <h1>Building from source</h1>
+    <p class="lede">Node, Rust, and three commands.</p>
+<div class="qa" id="prerequisites-and-the-three-commands">
+  <h3>Prerequisites and the three commands</h3>
+  <p>Node.js 20+, Rust (stable), and your platform’s <a href="https://tauri.app/start/prerequisites/" target="_blank" rel="noopener">Tauri prerequisites</a>. Then:</p>
+  <pre><code>npm install
+npm run sidecar      # builds the bundled donna-server once
+npm run tauri:dev    # run in development
+npm run tauri:build  # produce an installer</code></pre>
+  <p>Full details, including release CI and updater signing, live in <a href="https://github.com/duckyquang/Donna/blob/main/docs/BUILD.md" target="_blank" rel="noopener">docs/BUILD.md</a>. Contributions are welcome; start with <a href="https://github.com/duckyquang/Donna/blob/main/CONTEXT.md" target="_blank" rel="noopener">CONTEXT.md</a>.</p>
+</div>
+    <div class="docs-pager">
+      <a href="troubleshooting.html">← Troubleshooting</a>
+      <span class="spacer"></span>
+    </div>
+  </main>
+</div>
+
+<script src="search-index.js"></script>
+<script src="search.js"></script>
+</body>
+</html>

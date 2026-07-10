@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Updates — Donna Docs</title>
+  <meta name="description" content="Signed, one-click, and never without your say-so." />
+  <link rel="icon" href="../assets/donna-logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <a class="brand" href="../index.html"><img src="../assets/donna-logo.png" alt="" /><span>Donna</span></a>
+  <div class="nav-links">
+    <a href="../index.html#features">Features</a>
+    <a href="../index.html#integrations">Integrations</a>
+    <a href="../index.html#privacy">Privacy</a>
+    <a href="../index.html#faq">FAQ</a>
+    <a href="./" aria-current="page">Docs</a>
+  </div>
+  <div class="nav-cta">
+    <a href="https://github.com/duckyquang/Donna" class="ghost" target="_blank" rel="noopener">GitHub</a>
+    <a href="../index.html#download" class="button small">Download</a>
+  </div>
+</nav>
+
+<div class="docs-layout">
+  <aside class="docs-side">
+    <div class="docs-search">
+      <input type="search" placeholder="Search the docs…" aria-label="Search the docs" data-docs-search />
+    </div>
+    <nav class="docs-nav" aria-label="Docs pages">
+      <a href="./">Getting started</a>
+      <a href="architecture.html">Architecture</a>
+      <a href="models.html">Models</a>
+      <a href="privacy.html">Privacy &amp; data</a>
+      <a href="integrations.html">Integrations</a>
+      <a href="self-hosting.html">Self-hosting</a>
+      <a href="updates.html" aria-current="page">Updates</a>
+      <a href="troubleshooting.html">Troubleshooting</a>
+      <a href="building.html">Building from source</a>
+    </nav>
+  </aside>
+  <main class="docs-content">
+    <span class="pill">Docs</span>
+    <h1>Updates</h1>
+    <p class="lede">Signed, one-click, and never without your say-so.</p>
+<div class="qa" id="how-do-updates-work">
+  <h3>How do updates work?</h3>
+  <p>Donna checks GitHub Releases once at launch. If a newer version exists, a banner offers <strong>Update &amp; restart</strong>: one click downloads, verifies, and relaunches. Updates are cryptographically signed (minisign); the app refuses anything that doesn’t match the public key baked into it. No update ever installs without your click.</p>
+</div>
+<div class="qa" id="offline-or-on-a-flaky-connection">
+  <h3>Offline or on a flaky connection?</h3>
+  <p>The check fails silently and tries again next launch. Nothing blocks, nothing nags.</p>
+</div>
+    <div class="docs-pager">
+      <a href="self-hosting.html">← Self-hosting</a>
+      <span class="spacer"></span>
+      <a href="troubleshooting.html">Troubleshooting →</a>
+    </div>
+  </main>
+</div>
+
+<script src="search-index.js"></script>
+<script src="search.js"></script>
+</body>
+</html>

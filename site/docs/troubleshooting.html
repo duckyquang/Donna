@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Troubleshooting — Donna Docs</title>
+  <meta name="description" content="The failure modes we know about and how to get unstuck." />
+  <link rel="icon" href="../assets/donna-logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <a class="brand" href="../index.html"><img src="../assets/donna-logo.png" alt="" /><span>Donna</span></a>
+  <div class="nav-links">
+    <a href="../index.html#features">Features</a>
+    <a href="../index.html#integrations">Integrations</a>
+    <a href="../index.html#privacy">Privacy</a>
+    <a href="../index.html#faq">FAQ</a>
+    <a href="./" aria-current="page">Docs</a>
+  </div>
+  <div class="nav-cta">
+    <a href="https://github.com/duckyquang/Donna" class="ghost" target="_blank" rel="noopener">GitHub</a>
+    <a href="../index.html#download" class="button small">Download</a>
+  </div>
+</nav>
+
+<div class="docs-layout">
+  <aside class="docs-side">
+    <div class="docs-search">
+      <input type="search" placeholder="Search the docs…" aria-label="Search the docs" data-docs-search />
+    </div>
+    <nav class="docs-nav" aria-label="Docs pages">
+      <a href="./">Getting started</a>
+      <a href="architecture.html">Architecture</a>
+      <a href="models.html">Models</a>
+      <a href="privacy.html">Privacy &amp; data</a>
+      <a href="integrations.html">Integrations</a>
+      <a href="self-hosting.html">Self-hosting</a>
+      <a href="updates.html">Updates</a>
+      <a href="troubleshooting.html" aria-current="page">Troubleshooting</a>
+      <a href="building.html">Building from source</a>
+    </nav>
+  </aside>
+  <main class="docs-content">
+    <span class="pill">Docs</span>
+    <h1>Troubleshooting</h1>
+    <p class="lede">The failure modes we know about and how to get unstuck.</p>
+<div class="qa" id="donnas-brain-didnt-start">
+  <h3>“Donna’s brain didn’t start”</h3>
+  <p>The built-in server couldn’t come up. <strong>Retry</strong> usually fixes it (first launches can be slow while your OS scans the new binaries; Donna retries a few times on her own). If it persists, quit fully (tray → Quit), relaunch, and if it still fails, <a href="https://github.com/duckyquang/Donna/issues" target="_blank" rel="noopener">open an issue</a> with your OS version.</p>
+</div>
+<div class="qa" id="the-local-model-download-failed">
+  <h3>The local model download failed</h3>
+  <p>Usually a network hiccup; <strong>Try again</strong> resumes where it left off. As a fallback, install <a href="https://ollama.com/download" target="_blank" rel="noopener">Ollama</a> yourself; Donna detects it and continues. Model downloads are large (about 2 GB), so a slow connection takes a while.</p>
+</div>
+<div class="qa" id="the-linux-appimage-wont-start">
+  <h3>The Linux AppImage won’t start</h3>
+  <p>Make it executable first: <code>chmod +x Donna_*.AppImage</code>, then run it. On distros without FUSE 2, install <code>libfuse2</code> or use the <code>.deb</code>/<code>.rpm</code> instead.</p>
+</div>
+<div class="qa" id="donna-shows-unreachable-check-the-server">
+  <h3>Donna shows “unreachable — check the server”</h3>
+  <p>If you use the built-in brain, quit from the tray and relaunch. If you point at a self-hosted server, check the URL and token in <strong>Settings → Server</strong> (Test connection), and that the box is up. <strong>Use built-in server</strong> in the same card switches you back to the bundled brain anytime.</p>
+</div>
+<div class="qa" id="something-else-is-on-port-8377">
+  <h3>Something else is on port 8377</h3>
+  <p>Fine — the built-in server notices and moves to a random free port automatically. If you run a self-hosted server on the same machine for development, the two coexist; just mind which one Settings points at.</p>
+</div>
+    <div class="docs-pager">
+      <a href="updates.html">← Updates</a>
+      <span class="spacer"></span>
+      <a href="building.html">Building from source →</a>
+    </div>
+  </main>
+</div>
+
+<script src="search-index.js"></script>
+<script src="search.js"></script>
+</body>
+</html>

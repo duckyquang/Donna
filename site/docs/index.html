@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Getting started — Donna Docs</title>
+  <meta name="description" content="Requirements, first launch, and the two warnings every unsigned app gets." />
+  <link rel="icon" href="../assets/donna-logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <a class="brand" href="../index.html"><img src="../assets/donna-logo.png" alt="" /><span>Donna</span></a>
+  <div class="nav-links">
+    <a href="../index.html#features">Features</a>
+    <a href="../index.html#integrations">Integrations</a>
+    <a href="../index.html#privacy">Privacy</a>
+    <a href="../index.html#faq">FAQ</a>
+    <a href="./" aria-current="page">Docs</a>
+  </div>
+  <div class="nav-cta">
+    <a href="https://github.com/duckyquang/Donna" class="ghost" target="_blank" rel="noopener">GitHub</a>
+    <a href="../index.html#download" class="button small">Download</a>
+  </div>
+</nav>
+
+<div class="docs-layout">
+  <aside class="docs-side">
+    <div class="docs-search">
+      <input type="search" placeholder="Search the docs…" aria-label="Search the docs" data-docs-search />
+    </div>
+    <nav class="docs-nav" aria-label="Docs pages">
+      <a href="./" aria-current="page">Getting started</a>
+      <a href="architecture.html">Architecture</a>
+      <a href="models.html">Models</a>
+      <a href="privacy.html">Privacy &amp; data</a>
+      <a href="integrations.html">Integrations</a>
+      <a href="self-hosting.html">Self-hosting</a>
+      <a href="updates.html">Updates</a>
+      <a href="troubleshooting.html">Troubleshooting</a>
+      <a href="building.html">Building from source</a>
+    </nav>
+  </aside>
+  <main class="docs-content">
+    <span class="pill">Docs</span>
+    <h1>Getting started</h1>
+    <p class="lede">Requirements, first launch, and the two warnings every unsigned app gets.</p>
+<div class="qa" id="what-do-i-need-to-run-donna">
+  <h3>What do I need to run Donna?</h3>
+  <ul>
+    <li><strong>macOS:</strong> Apple Silicon or Intel (separate downloads; the site’s button picks Apple Silicon, the “Intel Mac?” link is next to it).</li>
+    <li><strong>Windows:</strong> Windows 10 or later, 64-bit. The installer sets up WebView2 automatically if it’s missing.</li>
+    <li><strong>Linux:</strong> x86_64 with a recent glibc; AppImage, <code>.deb</code>, and <code>.rpm</code> are provided.</li>
+    <li>For the free local model: roughly 4 GB of free disk (runtime + model) and 8 GB of RAM is a comfortable floor. Cloud keys need almost nothing.</li>
+  </ul>
+</div>
+<div class="qa" id="why-does-my-os-warn-me-on-first-launch">
+  <h3>Why does my OS warn me on first launch?</h3>
+  <p>Donna isn’t code-signed with Apple or Microsoft yet: certificates cost money and this is a free project. The binaries are built in public by <a href="https://github.com/duckyquang/Donna/actions" target="_blank" rel="noopener">GitHub Actions from the open source</a>, so you can audit exactly what you’re running.</p>
+  <p><strong>macOS:</strong> System Settings → Privacy &amp; Security → <strong>Open Anyway</strong>. <strong>Windows:</strong> More info → <strong>Run anyway</strong>. Each is needed once.</p>
+</div>
+<div class="qa" id="what-happens-on-first-launch">
+  <h3>What happens on first launch?</h3>
+  <p>Donna starts her built-in brain (a local server bundled inside the app), then walks you through choosing how she thinks: a free local model she downloads and manages herself, or your own OpenAI, Anthropic, or Google API key. After that you can connect tools from the Integrations page. No terminal, no config files.</p>
+</div>
+<div class="qa" id="where-did-the-window-go-when-i-closed-it">
+  <h3>Where did the window go when I closed it?</h3>
+  <p>Closing the window hides Donna instead of quitting her, so reminders and briefings keep working. She lives in the menu bar (macOS) or system tray (Windows/Linux). Use <strong>Open Donna</strong> there to bring the window back, or <strong>Quit Donna</strong> to actually stop everything.</p>
+</div>
+    <div class="docs-pager">
+      <span class="spacer"></span>
+      <a href="architecture.html">Architecture →</a>
+    </div>
+  </main>
+</div>
+
+<script src="search-index.js"></script>
+<script src="search.js"></script>
+</body>
+</html>

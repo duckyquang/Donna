@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Self-hosting — Donna Docs</title>
+  <meta name="description" content="For a Donna that works while your laptop sleeps." />
+  <link rel="icon" href="../assets/donna-logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <a class="brand" href="../index.html"><img src="../assets/donna-logo.png" alt="" /><span>Donna</span></a>
+  <div class="nav-links">
+    <a href="../index.html#features">Features</a>
+    <a href="../index.html#integrations">Integrations</a>
+    <a href="../index.html#privacy">Privacy</a>
+    <a href="../index.html#faq">FAQ</a>
+    <a href="./" aria-current="page">Docs</a>
+  </div>
+  <div class="nav-cta">
+    <a href="https://github.com/duckyquang/Donna" class="ghost" target="_blank" rel="noopener">GitHub</a>
+    <a href="../index.html#download" class="button small">Download</a>
+  </div>
+</nav>
+
+<div class="docs-layout">
+  <aside class="docs-side">
+    <div class="docs-search">
+      <input type="search" placeholder="Search the docs…" aria-label="Search the docs" data-docs-search />
+    </div>
+    <nav class="docs-nav" aria-label="Docs pages">
+      <a href="./">Getting started</a>
+      <a href="architecture.html">Architecture</a>
+      <a href="models.html">Models</a>
+      <a href="privacy.html">Privacy &amp; data</a>
+      <a href="integrations.html">Integrations</a>
+      <a href="self-hosting.html" aria-current="page">Self-hosting</a>
+      <a href="updates.html">Updates</a>
+      <a href="troubleshooting.html">Troubleshooting</a>
+      <a href="building.html">Building from source</a>
+    </nav>
+  </aside>
+  <main class="docs-content">
+    <span class="pill">Docs</span>
+    <h1>Self-hosting</h1>
+    <p class="lede">For a Donna that works while your laptop sleeps.</p>
+<div class="qa" id="why-self-host">
+  <h3>Why self-host?</h3>
+  <p>The built-in brain stops when your computer is off. Run <code>donna-server</code> on a VPS, home server, or Raspberry Pi instead and Donna is on duty 24/7: proactive routines fire, WhatsApp two-way works, and every desktop app you point at it shares one memory.</p>
+</div>
+<div class="qa" id="the-short-version">
+  <h3>The short version</h3>
+  <pre><code>git clone https://github.com/duckyquang/Donna.git
+cd Donna/donna-server
+cp .env.example .env   # set DONNA_TOKEN to a real secret
+docker compose up -d
+curl http://localhost:8377/health   # → ok</code></pre>
+  <p>Then in the desktop app: <strong>Settings → Server</strong>, enter the server’s URL and your <code>DONNA_TOKEN</code>, and Test connection. To migrate existing data, export a bundle from the app and run <code>donna-server import</code>; full steps in the <a href="https://github.com/duckyquang/Donna/blob/main/donna-server/README.md" target="_blank" rel="noopener">server README</a>.</p>
+</div>
+<div class="qa" id="environment-variables">
+  <h3>Environment variables</h3>
+  <table>
+    <tr><th>Variable</th><th>Required</th><th>Meaning</th></tr>
+    <tr><td><code>DONNA_TOKEN</code></td><td>Yes</td><td>Bearer token clients must send. The server refuses to start without it.</td></tr>
+    <tr><td><code>DONNA_PORT</code></td><td>No</td><td>Listen port, default <code>8377</code>.</td></tr>
+    <tr><td><code>DONNA_BIND</code></td><td>No</td><td>Bind address, default <code>0.0.0.0</code> (the packaged app’s built-in server uses <code>127.0.0.1</code>).</td></tr>
+    <tr><td><code>DONNA_DATA_DIR</code></td><td>No</td><td>Where the database, knowledge base, and credentials live.</td></tr>
+    <tr><td><code>TUNNEL_TOKEN</code></td><td>No</td><td>Cloudflare Tunnel token for exposing the server publicly (needed for WhatsApp webhooks).</td></tr>
+    <tr><td><code>DONNA_WA_VERIFY_TOKEN</code> / <code>DONNA_WA_APP_SECRET</code></td><td>No</td><td>WhatsApp webhook handshake and signature verification.</td></tr>
+  </table>
+</div>
+    <div class="docs-pager">
+      <a href="integrations.html">← Integrations</a>
+      <span class="spacer"></span>
+      <a href="updates.html">Updates →</a>
+    </div>
+  </main>
+</div>
+
+<script src="search-index.js"></script>
+<script src="search.js"></script>
+</body>
+</html>

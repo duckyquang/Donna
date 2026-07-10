@@ -65,10 +65,10 @@ section { padding: 96px 24px; max-width: 1080px; margin: 0 auto; text-align: cen
 /* Floating hero cards — big, scaling up further on wide screens. Text stays above. */
 .hero > *:not(.hero-cards) { position: relative; z-index: 1; }
 .hero-cards .card { position: absolute; background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); }
-.hero-cards .sticky-note { top: 12%; left: max(24px, 5vw); width: 340px; padding: 28px; background: #fdf3b4; transform: rotate(-5deg); font-size: 17.5px; line-height: 1.5; text-align: left; font-family: "Comic Sans MS", "Bradley Hand", cursive; }
-.mini-card { width: 348px; padding: 24px; text-align: left; font-size: 16px; }
-.mini-card h4 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 14px; }
-.mini-card .row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.hero-cards .sticky-note { top: 12%; left: max(24px, 5vw); width: 300px; padding: 25px; background: #fdf3b4; transform: rotate(-5deg); font-size: 16px; line-height: 1.5; text-align: left; font-family: "Comic Sans MS", "Bradley Hand", cursive; }
+.mini-card { width: 304px; padding: 22px; text-align: left; font-size: 15px; }
+.mini-card h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 12px; }
+.mini-card .row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); }
 .reminders { top: 11%; right: max(24px, 5vw); transform: rotate(4deg); }
 .tasks { bottom: 12%; left: max(24px, 7vw); transform: rotate(3deg); }
 .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
@@ -76,19 +76,19 @@ section { padding: 96px 24px; max-width: 1080px; margin: 0 auto; text-align: cen
 .dot.green { background: #16a34a; }
 .check { width: 17px; height: 17px; border: 1.5px solid var(--line); border-radius: 6px; flex-shrink: 0; }
 .check.done { background: var(--accent); border-color: var(--accent); }
-.logo-cluster { bottom: 13%; right: max(24px, 7vw); display: flex; gap: 17px; padding: 24px 26px; transform: rotate(-3deg); }
-.logo-cluster img { width: 48px; height: 48px; }
+.logo-cluster { bottom: 13%; right: max(24px, 7vw); display: flex; gap: 15px; padding: 22px 24px; transform: rotate(-3deg); }
+.logo-cluster img { width: 42px; height: 42px; }
 @media (min-width: 1560px) {
-  .hero-cards .sticky-note { transform: rotate(-5deg) scale(1.25); }
-  .reminders { transform: rotate(4deg) scale(1.25); }
-  .tasks { transform: rotate(3deg) scale(1.25); }
-  .logo-cluster { transform: rotate(-3deg) scale(1.25); }
+  .hero-cards .sticky-note { transform: rotate(-5deg) scale(1.15); }
+  .reminders { transform: rotate(4deg) scale(1.15); }
+  .tasks { transform: rotate(3deg) scale(1.15); }
+  .logo-cluster { transform: rotate(-3deg) scale(1.15); }
 }
 @media (min-width: 1880px) {
-  .hero-cards .sticky-note { transform: rotate(-5deg) scale(1.55); }
-  .reminders { transform: rotate(4deg) scale(1.55); }
-  .tasks { transform: rotate(3deg) scale(1.55); }
-  .logo-cluster { transform: rotate(-3deg) scale(1.55); }
+  .hero-cards .sticky-note { transform: rotate(-5deg) scale(1.35); }
+  .reminders { transform: rotate(4deg) scale(1.35); }
+  .tasks { transform: rotate(3deg) scale(1.35); }
+  .logo-cluster { transform: rotate(-3deg) scale(1.35); }
 }
 @media (max-width: 1150px) { .hero-cards { display: none; } }
 

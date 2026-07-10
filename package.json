@@ -1,6 +1,6 @@
 {
   "name": "donna",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Open-source, local-first AI personal assistant that learns about you and proactively gets work done.",
   "license": "MIT",
   "private": true,

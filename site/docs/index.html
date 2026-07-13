@@ -59,9 +59,9 @@
   </ul>
 </div>
 <div class="qa" id="why-does-my-os-warn-me-on-first-launch">
-  <h3>Why does my OS warn me on first launch?</h3>
+  <h3>Why does my OS say Donna is “damaged” or warn me on first launch?</h3>
   <p>Donna isn’t code-signed with Apple or Microsoft yet: certificates cost money and this is a free project. The binaries are built in public by <a href="https://github.com/duckyquang/Donna/actions" target="_blank" rel="noopener">GitHub Actions from the open source</a>, so you can audit exactly what you’re running.</p>
-  <p><strong>macOS:</strong> System Settings → Privacy &amp; Security → <strong>Open Anyway</strong>. <strong>Windows:</strong> More info → <strong>Run anyway</strong>. Each is needed once.</p>
+  <p><strong>macOS says Donna is “damaged”:</strong> open Terminal, paste <code>xattr -cr /Applications/Donna.app</code>, and press Return. One time only; that clears the quarantine flag macOS puts on unsigned downloads. If macOS instead offers the softer dialog, System Settings → Privacy &amp; Security → <strong>Open Anyway</strong> also works. <strong>Windows:</strong> More info → <strong>Run anyway</strong>. Each is needed once.</p>
 </div>
 <div class="qa" id="what-happens-on-first-launch">
   <h3>What happens on first launch?</h3>

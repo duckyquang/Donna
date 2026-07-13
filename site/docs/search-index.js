@@ -39,8 +39,8 @@ window.DOCS_INDEX = [
   "page": "index.html",
   "pageTitle": "Getting started",
   "id": "why-does-my-os-warn-me-on-first-launch",
-  "q": "Why does my OS warn me on first launch?",
-  "text": "Why does my OS warn me on first launch? Donna isn’t code-signed with Apple or Microsoft yet: certificates cost money and this is a free project. The binaries are built in public by GitHub Actions from the open source , so you can audit exactly what you’re running. macOS: System Settings → Privacy & Security → Open Anyway . Windows: More info → Run anyway . Each is needed once."
+  "q": "Why does my OS say Donna is “damaged” or warn me on first launch?",
+  "text": "Why does my OS say Donna is “damaged” or warn me on first launch? Donna isn’t code-signed with Apple or Microsoft yet: certificates cost money and this is a free project. The binaries are built in public by GitHub Actions from the open source , so you can audit exactly what you’re running. macOS says Donna is “damaged”: open Terminal, paste xattr -cr /Applications/Donna.app , and press Return. One"
  },
  {
   "page": "index.html",

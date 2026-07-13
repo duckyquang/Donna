@@ -79,6 +79,8 @@ jobs:
 
             Or skip this page entirely — the download button at https://duckyquang.github.io/Donna/ picks the right file for you.
 
+            macOS says Donna is “damaged”? Run `xattr -cr /Applications/Donna.app` in Terminal once — that clears the quarantine flag on unsigned apps.
+
             Everything else here (`.sig`, `latest.json`, `.app.tar.gz`) powers Donna's built-in auto-updater; you can ignore it.
           releaseDraft: true
           prerelease: false

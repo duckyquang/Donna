@@ -38,6 +38,13 @@ window.DOCS_INDEX = [
  {
   "page": "index.html",
   "pageTitle": "Getting started",
+  "id": "is-there-a-one-line-install",
+  "q": "Is there a one-line install for macOS?",
+  "text": "Is there a one-line install for macOS? Yes, and it’s the smoothest path. Paste this in Terminal: curl -fsSL https://duckyquang.github.io/Donna/install.sh | sh It detects Apple Silicon vs Intel, downloads the latest release from GitHub, installs Donna.app into Applications, and opens it. Because the download comes through curl , macOS never adds the quarantine flag, so there are no security dialogs"
+ },
+ {
+  "page": "index.html",
+  "pageTitle": "Getting started",
   "id": "why-does-my-os-warn-me-on-first-launch",
   "q": "Why does my OS say Donna is “damaged” or warn me on first launch?",
   "text": "Why does my OS say Donna is “damaged” or warn me on first launch? Donna isn’t code-signed with Apple or Microsoft yet: certificates cost money and this is a free project. The binaries are built in public by GitHub Actions from the open source , so you can audit exactly what you’re running. macOS says Donna is “damaged”: open Terminal, paste xattr -cr /Applications/Donna.app , and press Return. One"

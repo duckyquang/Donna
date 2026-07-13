@@ -81,6 +81,8 @@ jobs:
 
             macOS says Donna is “damaged”? Run `xattr -cr /Applications/Donna.app` in Terminal once — that clears the quarantine flag on unsigned apps.
 
+            Prefer zero dialogs on macOS? Install from Terminal instead: `curl -fsSL https://duckyquang.github.io/Donna/install.sh | sh`
+
             Everything else here (`.sig`, `latest.json`, `.app.tar.gz`) powers Donna's built-in auto-updater; you can ignore it.
           releaseDraft: true
           prerelease: false

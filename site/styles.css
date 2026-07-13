@@ -63,6 +63,14 @@ section { padding: 96px 24px; max-width: 1080px; margin: 0 auto; text-align: cen
 .fineprint { margin-top: 28px; font-size: 12px; color: var(--muted-dark); }
 .fineprint a { text-decoration: underline; }
 
+/* Terminal one-liner install (hero) */
+.term-install { display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 40px); margin-top: 4px; background: #1b1512; color: #e6ddd1; border-radius: 12px; padding: 10px 12px 10px 14px; box-shadow: var(--shadow-soft); }
+.term-install code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; white-space: nowrap; overflow-x: auto; background: none; padding: 0; color: inherit; }
+.term-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #9a8a78; border: 1px solid #3a3128; border-radius: 999px; padding: 2px 8px; flex-shrink: 0; }
+.term-install .copy-cmd { margin-left: 0; flex-shrink: 0; background: #322a22; border-color: #3a3128; color: #cfc4b4; }
+.term-note { font-size: 12px; color: var(--muted-dark); }
+@media (hover: hover) and (pointer: fine) { .term-install .copy-cmd:hover { color: #fff; border-color: #9a8a78; } }
+
 /* Floating hero cards — big, scaling up further on wide screens. Text stays above. */
 .hero > *:not(.hero-cards) { position: relative; z-index: 1; }
 .hero-cards .card { position: absolute; background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); }

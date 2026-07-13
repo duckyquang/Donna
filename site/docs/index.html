@@ -58,6 +58,12 @@
     <li>For the free local model: roughly 4 GB of free disk (runtime + model) and 8 GB of RAM is a comfortable floor. Cloud keys need almost nothing.</li>
   </ul>
 </div>
+<div class="qa" id="is-there-a-one-line-install">
+  <h3>Is there a one-line install for macOS?</h3>
+  <p>Yes, and it’s the smoothest path. Paste this in Terminal:</p>
+  <pre><code>curl -fsSL https://duckyquang.github.io/Donna/install.sh | sh</code></pre>
+  <p>It detects Apple Silicon vs Intel, downloads the latest release from GitHub, installs <code>Donna.app</code> into Applications, and opens it. Because the download comes through <code>curl</code>, macOS never adds the quarantine flag, so there are no security dialogs at all: no “damaged”, no Open Anyway. You can read the script first at <a href="https://duckyquang.github.io/Donna/install.sh" target="_blank" rel="noopener">install.sh</a>; it is forty lines of plain shell.</p>
+</div>
 <div class="qa" id="why-does-my-os-warn-me-on-first-launch">
   <h3>Why does my OS say Donna is “damaged” or warn me on first launch?</h3>
   <p>Donna isn’t code-signed with Apple or Microsoft yet: certificates cost money and this is a free project. The binaries are built in public by <a href="https://github.com/duckyquang/Donna/actions" target="_blank" rel="noopener">GitHub Actions from the open source</a>, so you can audit exactly what you’re running.</p>

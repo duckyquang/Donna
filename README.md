@@ -61,6 +61,14 @@ summarizing before you ask — all from an app running on your own computer.
 
 No coding required. One download.
 
+**Fastest on macOS** — one line in Terminal, zero security dialogs:
+
+```bash
+curl -fsSL https://duckyquang.github.io/Donna/install.sh | sh
+```
+
+Or the classic way:
+
 1. **Download Donna** from the [landing page](https://duckyquang.github.io/Donna/)
    (or grab an installer from [Releases](https://github.com/duckyquang/Donna/releases/latest)).
 2. **Open it.** First launch on macOS (Donna isn't Apple-notarized yet): if macOS

@@ -121,7 +121,7 @@
     <div class="feature wide reveal">
       <div class="mockup" aria-hidden="true">
         <div class="mini-bubble">Your 1:1 with Alex moved to 2 pm. Want me to shift your prep block too?</div>
-        <div class="mini-bubble user">Yes — and remind Sarah about the deck.</div>
+        <div class="mini-bubble user">Yes, and remind Sarah about the deck.</div>
         <div class="mini-bubble">Done. She prefers WhatsApp, so I sent it there.</div>
       </div>
       <h3>Chat that remembers</h3>
@@ -247,8 +247,10 @@
   <span class="pill">FAQ</span>
   <h2>Questions, answered</h2>
   <details id="faq-open">
-    <summary>macOS says “Donna can’t be opened” — what now?</summary>
-    <p>Donna isn’t code-signed with Apple yet (that costs $99/year; it’s coming). The first time only: open <strong>System Settings → Privacy &amp; Security</strong>, scroll down, and click <strong>Open Anyway</strong> next to Donna. After that she opens normally.</p>
+    <summary>macOS says Donna is “damaged” or “can’t be opened” — what now?</summary>
+    <p>Donna isn’t code-signed with Apple: certificates cost money and this is a free project. The binaries are built in public by <a href="https://github.com/duckyquang/Donna/actions" target="_blank" rel="noopener">GitHub Actions</a>, so you can audit exactly what you’re running.</p>
+    <p>The fix that always works: open Terminal, paste <code>xattr -cr /Applications/Donna.app</code> <button class="copy-cmd" type="button" data-copy="xattr -cr /Applications/Donna.app">Copy</button>, and press Return. One time only; after that she opens normally.</p>
+    <p>If macOS instead offers the softer dialog, you can also go to <strong>System Settings → Privacy &amp; Security</strong>, scroll down, and click <strong>Open Anyway</strong> next to Donna.</p>
   </details>
   <details>
     <summary>Windows shows “Windows protected your PC”</summary>

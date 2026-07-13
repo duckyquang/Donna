@@ -78,3 +78,17 @@ async function latestAssets() {
     io.observe(el);
   }
 })();
+
+// Copy-to-clipboard buttons (FAQ terminal command).
+(() => {
+  if (!navigator.clipboard?.writeText) return;
+  for (const btn of document.querySelectorAll(".copy-cmd")) {
+    const label = btn.textContent;
+    btn.addEventListener("click", () => {
+      navigator.clipboard.writeText(btn.dataset.copy).then(() => {
+        btn.textContent = "Copied";
+        setTimeout(() => { btn.textContent = label; }, 1500);
+      }).catch(() => {});
+    });
+  }
+})();

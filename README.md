@@ -63,8 +63,10 @@ No coding required. One download.
 
 1. **Download Donna** from the [landing page](https://duckyquang.github.io/Donna/)
    (or grab an installer from [Releases](https://github.com/duckyquang/Donna/releases/latest)).
-2. **Open it.** First launch on macOS: System Settings → Privacy & Security →
-   **Open Anyway** (Donna isn't Apple-notarized yet). On Windows: **More info → Run
+2. **Open it.** First launch on macOS (Donna isn't Apple-notarized yet): if macOS
+   says the app "is damaged", run `xattr -cr /Applications/Donna.app` in Terminal
+   once — that clears the quarantine flag. If it instead offers **Open Anyway**
+   (System Settings → Privacy & Security), use that. On Windows: **More info → Run
    anyway**. Once, and only once.
 3. **Follow the onboarding.** Donna sets up her own brain — a free local model
    downloaded for you, or your own OpenAI/Anthropic/Google API key — then connects
